@@ -188,15 +188,18 @@ class NioMultiplayerIntegrationTest {
         assertTrue(createLatch.await(5, TimeUnit.SECONDS));
         String roomCode = roomCodeRef.get();
 
-        // Step 2: Track ROOM_STATE broadcasts received by host
-        CountDownLatch hostStateLatch = new CountDownLatch(2); // expect updates as player2 and player3 join
+        // Step 2: Track ROOM_STATE broadcasts received by host (wait specifically for 3 players)
+        CountDownLatch threePlayersLatch = new CountDownLatch(1);
         AtomicInteger latestPlayerCount = new AtomicInteger(1);
 
         host.registerListener(MessageType.ROOM_STATE, msg -> {
             JsonNode payload = msg.getPayload();
             if (payload != null && payload.has("playerCount")) {
-                latestPlayerCount.set(payload.get("playerCount").asInt());
-                hostStateLatch.countDown();
+                int count = payload.get("playerCount").asInt();
+                latestPlayerCount.set(count);
+                if (count == 3) {
+                    threePlayersLatch.countDown();
+                }
             }
         });
 
@@ -212,7 +215,7 @@ class NioMultiplayerIntegrationTest {
         player3.send(Message.request(MessageType.JOIN_ROOM, "req-join-3", Map.of("roomCode", roomCode)));
         assertTrue(joinLatch3.await(5, TimeUnit.SECONDS), "Player 3 must receive ROOM_JOINED");
 
-        assertTrue(hostStateLatch.await(5, TimeUnit.SECONDS), "Host must receive live ROOM_STATE broadcasts");
+        assertTrue(threePlayersLatch.await(5, TimeUnit.SECONDS), "Host must receive live ROOM_STATE broadcast with 3 participants");
         assertEquals(3, latestPlayerCount.get(), "Room must have 3 participants");
     }
 
