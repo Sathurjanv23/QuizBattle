@@ -3,16 +3,17 @@ package com.quizbattle.app;
 import com.quizbattle.server.DefaultServerMessageDispatcher;
 import com.quizbattle.server.QuizServer;
 import com.quizbattle.server.blocking.BlockingQuizServer;
+import com.quizbattle.server.nio.NioQuizServer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
  * Server application bootstrap entry point.
  *
- * <p>Initializes the reference blocking TCP server for Member 1,
+ * <p>Initializes the high-performance Java NIO non-blocking server by default (Member 2),
  * wired to the transport-neutral {@link DefaultServerMessageDispatcher}.
- * Member 2/4 can swap {@link BlockingQuizServer} with an NIO server implementation
- * without modifying game logic or protocol handling.</p>
+ * Blocking TCP reference implementation (Member 1) remains selectable via
+ * {@code -Dquizbattle.server.transport=blocking}.</p>
  */
 public class QuizBattleServerApp {
 
@@ -21,16 +22,19 @@ public class QuizBattleServerApp {
     public static void main(String[] args) {
         int port = AppConfig.getServerPort();
         int discoveryPort = AppConfig.getDiscoveryPort();
+        String transport = System.getProperty("quizbattle.server.transport", "nio").trim().toLowerCase();
 
         log.info("====================================================");
-        log.info("Starting QuizBattle 2.0 Server (Member 1 TCP Reference)");
+        log.info("Starting QuizBattle 2.0 Server (Member 2 Java NIO Non-Blocking Engine)");
         log.info("TCP Port: {} | UDP Discovery Port: {}", port, discoveryPort);
         log.info("Max Message Framing Cap: {} bytes (64 KiB)", AppConfig.getMaxMessageBytes());
-        log.info("Transport: Blocking ServerSocket (Switchable)");
+        log.info("Transport: {} [Default: Java NIO Non-Blocking]", "blocking".equals(transport) ? "Blocking ServerSocket" : "Java NIO Selector");
         log.info("====================================================");
 
         DefaultServerMessageDispatcher dispatcher = new DefaultServerMessageDispatcher();
-        QuizServer server = new BlockingQuizServer(port, dispatcher);
+        QuizServer server = "blocking".equals(transport)
+                ? new BlockingQuizServer(port, dispatcher)
+                : new NioQuizServer(port, dispatcher);
 
         try {
             server.start();

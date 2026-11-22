@@ -1,120 +1,133 @@
-# QuizBattle 2.0 Demonstration Runbook (Member 1 - TCP & Basic Quiz)
+# QuizBattle 2.0 Demonstration Runbook (Member 2: Java NIO + Multiplayer Rooms + UI)
 
-This guide documents the end-to-end operation, verification, and manual testing of the basic TCP quiz system.
+This guide documents the end-to-end operation, verification, and automated demonstration of the Java NIO non-blocking server and multiplayer room system.
 
 ---
 
 ## 1. Automated Test Suite Verification
 
-Run the full automated test suite (including unit, protocol framing, stream fragmentation, and end-to-end TCP integration tests):
+Run the full automated test suite (including unit tests, protocol framing, stream fragmentation, 18 Member 2 NIO integration tests, and the 5-client demonstration):
 
 ```powershell
-$env:JAVA_HOME = "C:\Users\User\.jdks\openjdk-26.0.1"
-$env:Path = "$env:JAVA_HOME\bin;" + $env:Path
 mvn clean test
 ```
 
 ### Verified Test Suites:
-1. **`MessageCodecTest`** (7 tests):
-   - Newline-delimited framing validation (`\n`).
-   - Request-response envelope serialization and Jackson JSON parsing.
-   - 64 KiB buffer cap rejection (`ProtocolException`).
-   - Malformed JSON structured rejection.
-   - **TCP Stream Fragmentation Reassembly**: Simulates partial frames delivered across 3 split packets; confirms the accumulator buffers until `\n`.
-   - **TCP Multi-Message Chunk Handling**: Confirms concatenated messages (`msg1\nmsg2\n`) in a single network buffer are parsed independently.
-   - Buffer overflow rejection without delimiter.
-2. **`TcpQuizIntegrationTest`** (2 tests):
-   - **Full End-to-End Quiz Flow**: Binds `BlockingQuizServer` on an ephemeral port, connects `SocketNetworkClient`, executes handshake (`CONNECT` -> `CONNECTED`), joins room (`JOIN_ROOM` -> `ROOM_JOINED` + `QUESTION`), submits multiple-choice choice (`ANSWER` -> `ANSWER_RESULT`), and verifies authoritative player ID and score updates.
-   - **Security / Authorization Validation**: Confirms that submitting an answer without prior authentication produces a structured `UNAUTHORIZED` error envelope.
-3. **`ModelSmokeTest`** (3 tests):
-   - Model immutability, client question masking (`correctOptionIndex` nullified), and leaderboard sorting.
+1. **`NioMultiplayerIntegrationTest`** (17 tests):
+   - **NIO Server Startup**: Dynamic port binding and selector initialization.
+   - **5 Simultaneous Clients**: Multi-client non-blocking connect and handshake.
+   - **Host Room Creation**: Server-authoritative 6-character room codes (`QB42KD`).
+   - **Unique Room Codes**: Collision-free generation.
+   - **Multiple Players Joining**: Synchronized lobby joins.
+   - **Live `ROOM_STATE` Broadcasts**: Real-time roster distribution.
+   - **Unknown Room Code Rejection**: `ROOM_NOT_FOUND` error handling.
+   - **Two-Room Isolation**: Cross-room message blocking.
+   - **Fragmented JSON Reassembly**: TCP chunk streaming.
+   - **Multiple Messages in One Read**: Concatenated packet handling with order preservation.
+   - **Partial TCP Writes**: Outbound buffer resumption.
+   - **Bounded Outbound Queues**: Slow client backpressure.
+   - **Unexpected Disconnect**: SelectionKey and channel cleanup.
+   - **Room Cleanup**: Deletion of empty ephemeral rooms.
+   - **Host Disconnect & Migration**: Automatic promotion of remaining players.
+   - **Selector Idle Behavior**: Zero busy-spinning verification.
+   - **Quiz Question/Answer Regression**: Full quiz round execution over NIO.
+2. **`FiveClientDemonstrationTest`** (1 test):
+   - Full 13-step automated multiplayer demonstration.
+3. **`TcpQuizIntegrationTest`** (2 tests):
+   - Member 1 TCP client and unauthorized answer rejection.
+4. **`ModelSmokeTest`** (3 tests):
+   - Domain models, masking, and immutability.
+5. **`MessageCodecTest`** (7 tests):
+   - Framing, 64 KiB limits, and JSON decoding.
 
-**Total**: 12 tests, 0 failures, 0 errors, 0 skipped.
+**Total**: 30 tests, 0 failures, 0 errors, 0 skipped.
 
 ---
 
-## 2. Running the Reference TCP Server
+## 2. Launching the Default Java NIO Server
 
-In Terminal 1, launch the blocking TCP reference server:
+In Terminal 1:
 
 ```powershell
-$env:JAVA_HOME = "C:\Users\User\.jdks\openjdk-26.0.1"
-$env:Path = "$env:JAVA_HOME\bin;" + $env:Path
 mvn compile exec:java -Dexec.mainClass="com.quizbattle.app.QuizBattleServerApp"
 ```
 
 ### Expected Startup Output:
 ```
 ====================================================
-Starting QuizBattle 2.0 Server (Member 1 TCP Reference)
+Starting QuizBattle 2.0 Server (Member 2 Java NIO Non-Blocking Engine)
 TCP Port: 5000 | UDP Discovery Port: 5001
 Max Message Framing Cap: 65536 bytes (64 KiB)
-Transport: Blocking ServerSocket (Switchable)
+Transport: Java NIO Selector [Default: Java NIO Non-Blocking]
 ====================================================
-Initialized DefaultQuizRoomService with default room 'General Trivia Arena' (room-default)
-Loaded 5 questions from resource /questions/sample_questions.json
-BlockingQuizServer started listening on TCP port 5000
-Acceptor loop started on port 5000
-QuizBattle Server running and accepting connections on port 5000.
+Initializing Java NIO Selector and ServerSocketChannel on port 5000...
+NioQuizServer successfully listening on TCP port 5000 [Selector multiplexing active]
+Java NIO Selector event loop started on port 5000
 ```
 
 ---
 
-## 3. Running the JavaFX Client
+## 3. Five-Client Live Demonstration Walkthrough
 
-In Terminal 2, launch the JavaFX client application:
+Open 5 separate terminal tabs or PowerShell windows to launch 5 client instances:
 
 ```powershell
-$env:JAVA_HOME = "C:\Users\User\.jdks\openjdk-26.0.1"
-$env:Path = "$env:JAVA_HOME\bin;" + $env:Path
 mvn compile exec:java -Dexec.mainClass="com.quizbattle.client.ClientLauncher"
 ```
 
-*(Alternatively: `mvn javafx:run`)*
+### Detailed Scenario Walkthrough:
 
----
-
-## 4. Manual Demonstration Walkthrough
-
-1. **Screen 1: Welcome Screen**
-   - The user is greeted by the sleek dark-theme card titled **"QuizBattle 2.0 - Multiplayer Network Trivia Arena"**.
-   - Input username: e.g. `CyberNinja`.
+1. **Step 1: Welcome Screen (All 5 Clients)**:
+   - Client 1 inputs alias: `HostAlice`
+   - Client 2 inputs alias: `Bob`
+   - Client 3 inputs alias: `Charlie`
+   - Client 4 inputs alias: `Diana`
+   - Client 5 inputs alias: `Evan`
    - Click **"Continue to Connect ➔"**.
-   - *Validation test*: Leaving the field empty shows `Please enter a valid username.` without freezing.
 
-2. **Screen 2: Manual Connect Screen**
-   - Displays player alias badge: `Connecting as: CyberNinja`.
-   - Shows host (`127.0.0.1`) and port (`5000`).
+2. **Step 2: Server Connection (All 5 Clients)**:
+   - Accept default host `127.0.0.1` and port `5000`.
    - Click **"Connect to Quiz Server"**.
-   - Connection indicator smoothly switches to blue (`Connecting...`) on background thread.
-   - Upon TCP socket connect and server `CONNECT` handshake, receives `CONNECTED` with assigned `playerId` (e.g. `usr-a1b2c3d4`).
-   - Seamlessly transitions to the Player Home screen.
-   - *Error test*: Entering an unreachable port (e.g. `9999`) displays `ConnectException: Connection refused` in an alert box without crashing the UI.
+   - Socket connects, performs `CONNECT` handshake, receives `CONNECTED` with unique `playerId` (e.g. `usr-1a2b3c4d`).
+   - All 5 clients land smoothly on the **Host Dashboard** (Screen 1).
 
-3. **Screen 3: Player Home & Basic Quiz**
-   - Top bar displays:
-     - Player identity: `👤 CyberNinja (usr-a1b2c3d4)`
-     - Connection status: `TCP: 127.0.0.1:5000` (green badge)
-     - Score badge: `Score: 0 pts`
-     - `Disconnect` button
-   - Click **"🎯 Join Default Room"**.
-   - Client sends `JOIN_ROOM` -> receives `ROOM_JOINED` (`General Trivia Arena`) and immediately receives the active question (`QUESTION`).
-   - Question card displays:
-     - Question metadata: `Question ID: q-101 | Points: 100 | Time: 20s`
-     - Question prompt: `What is the primary difference between TCP and UDP?`
-     - 4 interactive multiple-choice option buttons (A, B, C, D).
-   - Click option **A** ("TCP is connection-oriented and reliable; UDP is connectionless and best-effort"):
-     - Option buttons disable to prevent double answers.
-     - In background, client transmits `ANSWER` message.
-     - Server evaluates answer, replies with `ANSWER_RESULT`:
-       - Green banner appears: `✓ Correct! +100 points. Total Score: 100 pts`
-       - Top bar updates: `Score: 100 pts`.
-       - **"Next Question ➔"** button appears.
-   - Click **"Next Question ➔"**:
-     - Client requests next question; server advances to question 2 ("In Java network programming, which method accepts an incoming TCP client connection on ServerSocket?").
-     - Options reset for question 2!
+3. **Step 3: Host Creates Room**:
+   - `HostAlice` clicks **"🎮 Create Multiplayer Room"**.
+   - Server validates session, generates unique 6-character room code (e.g. `QB42KD`), and sends `ROOM_CREATED`.
+   - Screen 2 (**Create Room Confirmation**) appears showing the code `QB42KD` in large font.
+   - Click **"📋 Copy Room Code"** (clipboard confirms `✓ Room code QB42KD copied!`).
+   - Click **"Enter Multiplayer Lobby ➔"**.
 
-4. **UI Limitations & Handover Boundary for Member 1**:
-   - Reconnection logic and multi-room discovery (UDP) are out of Member 1's scope (owned by Member 5).
-   - Real-time multi-client leaderboard synchronization UI is owned by Member 3 & 5.
-   - Server transport uses standard blocking `ServerSocket` worker threads; scalable NIO selector replacement is Member 2's focus.
+4. **Step 4: Multiplayer Lobby (Screen 4)**:
+   - `HostAlice` sees:
+     - `ROOM CODE: QB42KD`
+     - `👑 Host: HostAlice`
+     - `Players: 1`
+     - Player row: `👑 HostAlice (usr-...) [HOST]`
+     - Active button: `🚀 Start Quiz (Host)`
+
+5. **Step 5: Remaining 4 Players Join**:
+   - `Bob`, `Charlie`, `Diana`, and `Evan` click **"🚪 Join Room by Code"** on their Dashboards (Screen 3).
+   - Enter `QB42KD`.
+   - Click **"Join Room ➔"**.
+   - Each client receives `ROOM_JOINED` and enters the Lobby (Screen 4).
+   - Non-host button displays: `⏳ Waiting for Host...` (disabled).
+
+6. **Step 6: Live Roster Synchronization**:
+   - All 5 clients display identical real-time rosters:
+     - `Players: 5`
+     - 1 Host (`HostAlice`) + 4 Players (`Bob`, `Charlie`, `Diana`, `Evan`).
+
+7. **Step 7: Player Disconnect & Real-time Update**:
+   - Close `Evan`'s window.
+   - Within milliseconds, all remaining 4 clients update to `Players: 4` without server restart or crash.
+
+8. **Step 8: Room Isolation Test**:
+   - Launch a 6th client, create Room B (e.g. `QB99ZZ`).
+   - Room B is completely isolated from Room A.
+
+9. **Step 9: Launch Synchronized Quiz**:
+   - `HostAlice` clicks **"🚀 Start Quiz (Host)"**.
+   - Server delivers active `QUESTION` to all Room A participants.
+   - All 4 clients transition to the trivia arena, showing the question and 4 multiple-choice options (A, B, C, D).
+   - Select option A: instant feedback banner (`✓ Correct! +100 points`).

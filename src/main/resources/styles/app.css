@@ -244,3 +244,16 @@
     -fx-font-size: 14px;
     -fx-font-weight: bold;
 }
+
+/* Room Code Styling */
+.room-code-display {
+    -fx-font-size: 24px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #38bdf8;
+    -fx-background-color: #0f172a;
+    -fx-border-color: #38bdf8;
+    -fx-border-radius: 8px;
+    -fx-background-radius: 8px;
+    -fx-padding: 8px 18px;
+    -fx-font-family: "Consolas", "Courier New", monospace;
+}

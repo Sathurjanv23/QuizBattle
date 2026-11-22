@@ -21,6 +21,13 @@ public interface QuizRoomService {
     Room createRoom(String hostPlayerId, String roomName, int maxPlayers);
 
     /**
+     * Creates a new game room with host player ID and username.
+     */
+    default Room createRoom(String hostPlayerId, String hostUsername, String roomName, int maxPlayers) {
+        return createRoom(hostPlayerId, roomName, maxPlayers);
+    }
+
+    /**
      * Joins an existing room.
      *
      * @param roomId room identifier
@@ -28,6 +35,13 @@ public interface QuizRoomService {
      * @return updated Room instance
      */
     Room joinRoom(String roomId, String playerId);
+
+    /**
+     * Joins an existing room with player ID and username.
+     */
+    default Room joinRoom(String roomId, String playerId, String username) {
+        return joinRoom(roomId, playerId);
+    }
 
     /**
      * Removes a player from a room.

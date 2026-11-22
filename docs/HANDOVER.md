@@ -1,74 +1,91 @@
-# Handover Guide: Ready for Member 2
+# Handover Guide: Ready for Member 3 (Multi-threading, Timed Engine & Synchronization)
 
-Welcome Member 2! Member 1 has completed the foundational TCP socket networking and basic JavaFX quiz client. The project is fully runnable end-to-end with automated test coverage.
-
----
-
-## 🎯 Member 2 Assignment Scope
-Member 2's primary focus is **NON-BLOCKING I/O (NIO) / CONCURRENCY & SCALABLE ROOM MANAGEMENT**:
-1. Replace the temporary `BlockingQuizServer` (`java.net.ServerSocket`) with an NIO or scalable concurrent transport without altering game logic or UI presentation.
-2. Maintain strict decoupling: the server transport communicates exclusively through `ServerMessageDispatcher` and `ClientSession`.
-3. Preserve all client protocol invariants, framing (`\n`), and message schemas.
+Welcome Member 3! Member 2 has implemented the **Java NIO Non-Blocking Server**, **Multiplayer Room Management**, and the complete **JavaFX Host/Lobby UI Suite**. The project builds cleanly with 30 passing automated tests.
 
 ---
 
-## 🧩 Switchable Architecture Interfaces
+## 🎯 Member 3 Assignment Scope
 
-Member 1 designed the server layer to be completely switchable:
-
-| Component | Responsibility | Status | Member 2 Action |
-|---|---|---|---|
-| `QuizServer` | Server lifecycle interface (`start()`, `stop()`, `getPort()`) | Stable | Implement `NioQuizServer` or concurrent server |
-| `ServerMessageDispatcher` | Routes incoming `Message` envelopes to game services | Stable | **Do not modify** - reuse directly |
-| `ClientSession` | Encapsulates client channel/socket state & session security | Stable | Implement `NioClientSession` wrapping `SocketChannel` |
-| `QuizRoomService` | Room lifecycle & member rosters | Stable | Enhance with fine-grained lock-free concurrency |
-| `DefaultQuizGameService` | 5 fixed questions & answer evaluation | Stable | **Do not modify** - reuse directly |
-| `JavaFX Client UI` | Welcome, Manual Connect, and Player Home | Stable | **Do not modify** - works seamlessly over any TCP server |
+Member 3's primary responsibilities:
+1. **Multithreading & Timed Engine**:
+   - Utilize `ExecutorService` and `ScheduledExecutorService` for synchronized countdown timers (e.g. 15-second per-question countdowns).
+   - Implement automated question timeouts and auto-advance mechanisms.
+2. **Category Selection & Match Orchestration**:
+   - Allow host to select trivia categories and round lengths.
+3. **Atomic Scoring & Synchronized Leaderboard Broadcasts**:
+   - Thread-safe score calculation (e.g. speed-based bonus scoring using atomic accumulators).
+   - Synchronized snapshot generation and broadcast of `LEADERBOARD` and `QUIZ_FINISHED` message envelopes.
 
 ---
 
-## 🚀 5-Step Handover Guide for Member 2
+## 🧩 Clean Extension Points Provided by Member 2
 
-### Step 1: Branch Off `main` (After PR 01 is Merged)
+Member 2 established thread-safe extension contracts specifically so Member 3's background threads never write unsafely to network channels:
+
+### 1. Thread-Safe Broadcast to Room
+```java
+// Available in DefaultServerMessageDispatcher:
+dispatcher.broadcastToRoom(roomId, message);
+```
+- Completely thread-safe.
+- Respects room isolation: delivers strictly to connected participants of that specific `roomId`.
+
+### 2. Thread-Safe Send to Specific Client
+```java
+// Available on any ClientSession:
+session.send(message);
+```
+- Internally enqueues the `ByteBuffer` into the session's bounded write queue and invokes `selector.wakeup()`.
+- Thread-safe: can be called safely from timer threads or worker pools.
+
+### 3. Asynchronous Server Task Queue
+```java
+// Available on NioQuizServer:
+server.submitTask(() -> {
+    // Executes inside the NIO selector loop
+});
+```
+- Safe mechanism to execute channel modifications without race conditions.
+
+### 4. Authoritative Room Membership & Host Checks
+```java
+QuizRoomService roomService = dispatcher.getRoomService();
+Optional<Room> roomOpt = roomService.findRoomById(roomId);
+if (roomOpt.isPresent()) {
+    Room room = roomOpt.get();
+    String hostId = room.getHostPlayerId();
+    List<Player> players = room.getPlayers();
+    boolean isHost = hostId.equals(session.getPlayerId());
+}
+```
+
+---
+
+## 🚀 5-Step Handover Workflow for Member 3
+
+### Step 1: Branch Off `main` (After PR 02 is Merged)
 ```bash
 git fetch origin
-git checkout -b feature/02-nio-concurrency origin/main
+git checkout -b feature/03-sync-scoring-timer origin/main
 mvn clean test
 ```
-Verify that all 12 tests pass.
+Verify that all 30 tests pass.
 
-### Step 2: Implement `NioClientSession` in `server.nio`
-- Implement `ClientSession` wrapping a non-blocking `java.nio.channels.SocketChannel`.
-- Maintain write buffers or write queues for non-blocking socket writes without blocking selector threads.
+### Step 2: Implement Timed Quiz Engine in `server/game/`
+- Introduce `ScheduledExecutorService` for 1-second countdown ticks.
+- Broadcast periodic countdown warnings or tick events to the room.
+- When timer expires, trigger `QUESTION_CLOSED` revealing the correct answer.
 
-### Step 3: Implement `NioQuizServer` in `server.nio`
-- Extend or replace `NioServerStub.java`.
-- Open `ServerSocketChannel`, configure non-blocking mode, and register with `Selector` for `OP_ACCEPT`.
-- On `OP_READ`:
-  - Read incoming bytes into a per-channel `ByteBuffer`.
-  - Use `StreamFrameAccumulator` or buffer split on `\n` to reassemble complete lines.
-  - Decode with `JsonMessageCodec.decode(line)`.
-  - Dispatch via `ServerMessageDispatcher.dispatch(session, message)`.
+### Step 3: Implement Atomic Scoring & Leaderboard Snapshots in `server/sync/`
+- Implement atomic score aggregation.
+- Generate `LEADERBOARD` broadcast payloads after each question.
 
-### Step 4: Swap Server Implementation in `QuizBattleServerApp`
-In `QuizBattleServerApp.java`:
-```java
-// Member 1 (temporary):
-// QuizServer server = new BlockingQuizServer(port, dispatcher);
+### Step 4: Hook Start Quiz into Timed Loop
+In `DefaultServerMessageDispatcher.handleStartQuiz()`:
+- Hand off match start to Member 3's timed quiz engine.
 
-// Member 2 (NIO):
-QuizServer server = new NioQuizServer(port, dispatcher);
+### Step 5: Verify End-to-End Operation
+```bash
+mvn compile exec:java -Dexec.mainClass="com.quizbattle.app.QuizBattleServerApp"
+mvn javafx:run
 ```
-Notice that zero business logic or client UI code needs to change!
-
-### Step 5: Verify End-to-End Compatibility
-1. Run automated tests: `mvn clean test`.
-2. Start your NIO server:
-   ```bash
-   mvn compile exec:java -Dexec.mainClass="com.quizbattle.app.QuizBattleServerApp"
-   ```
-3. Launch JavaFX Client:
-   ```bash
-   mvn compile exec:java -Dexec.mainClass="com.quizbattle.client.ClientLauncher"
-   ```
-4. Connect, join room, and submit answers. Verify that your NIO server delivers identical protocol messages without regression!

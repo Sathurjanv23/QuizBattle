@@ -17,6 +17,8 @@ public enum MessageType {
     JOIN_ROOM,
     ROOM_JOINED,
     ROOM_STATE,
+    LEAVE_ROOM,
+    ROOM_LEFT,
 
     // Quiz Lifecycle
     START_QUIZ,
