@@ -45,14 +45,20 @@
 }
 
 .card-heading {
-    -fx-font-size: 24px;
+    -fx-font-size: 22px;
     -fx-font-weight: bold;
     -fx-text-fill: #f1f5f9;
 }
 
 .card-subtitle {
-    -fx-font-size: 14px;
+    -fx-font-size: 13px;
     -fx-text-fill: #94a3b8;
+}
+
+.field-label {
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #cbd5e1;
 }
 
 /* Form Inputs */
@@ -76,10 +82,10 @@
 .primary-button {
     -fx-background-color: #2563eb; /* Blue 600 */
     -fx-text-fill: #ffffff;
-    -fx-font-size: 15px;
+    -fx-font-size: 14px;
     -fx-font-weight: bold;
     -fx-background-radius: 6px;
-    -fx-padding: 12px 24px;
+    -fx-padding: 10px 20px;
     -fx-cursor: hand;
 }
 
@@ -91,7 +97,150 @@
     -fx-background-color: #1e40af;
 }
 
-.info-label {
+.secondary-button {
+    -fx-background-color: #334155;
+    -fx-text-fill: #cbd5e1;
+    -fx-font-size: 13px;
+    -fx-background-radius: 6px;
+    -fx-padding: 8px 16px;
+    -fx-cursor: hand;
+}
+
+.secondary-button:hover {
+    -fx-background-color: #475569;
+}
+
+.danger-button {
+    -fx-background-color: #dc2626;
+    -fx-text-fill: #ffffff;
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+    -fx-background-radius: 6px;
+    -fx-padding: 6px 12px;
+    -fx-cursor: hand;
+}
+
+.danger-button:hover {
+    -fx-background-color: #b91c1c;
+}
+
+/* Badges & Alerts */
+.player-badge {
+    -fx-background-color: #1e3a5f;
+    -fx-text-fill: #38bdf8;
+    -fx-padding: 4px 10px;
+    -fx-background-radius: 12px;
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+}
+
+.player-header-bar {
+    -fx-background-color: #1e293b;
+    -fx-background-radius: 8px;
+    -fx-border-color: #334155;
+    -fx-border-radius: 8px;
+    -fx-border-width: 1px;
+}
+
+.player-identity-label {
+    -fx-font-size: 14px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #f1f5f9;
+}
+
+.connected-badge {
+    -fx-background-color: #064e3b;
+    -fx-text-fill: #34d399;
+    -fx-padding: 3px 8px;
+    -fx-background-radius: 10px;
     -fx-font-size: 11px;
-    -fx-text-fill: #64748b;
+    -fx-font-weight: bold;
+}
+
+.score-badge {
+    -fx-background-color: #312e81;
+    -fx-text-fill: #a5b4fc;
+    -fx-padding: 4px 10px;
+    -fx-background-radius: 10px;
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+}
+
+.room-badge {
+    -fx-background-color: #4338ca;
+    -fx-text-fill: #e0e7ff;
+    -fx-padding: 3px 8px;
+    -fx-background-radius: 8px;
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+}
+
+.validation-error-label {
+    -fx-font-size: 12px;
+    -fx-text-fill: #ef4444;
+}
+
+.error-box {
+    -fx-background-color: #451a1a;
+    -fx-border-color: #ef4444;
+    -fx-border-width: 1px;
+    -fx-border-radius: 6px;
+    -fx-background-radius: 6px;
+    -fx-padding: 10px 14px;
+    -fx-text-fill: #fca5a5;
+    -fx-font-size: 13px;
+}
+
+/* Quiz Controls */
+.question-text {
+    -fx-font-size: 17px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #f8fafc;
+    -fx-padding: 6px 0 10px 0;
+}
+
+.option-button {
+    -fx-background-color: #0f172a;
+    -fx-text-fill: #e2e8f0;
+    -fx-font-size: 14px;
+    -fx-background-radius: 8px;
+    -fx-border-color: #334155;
+    -fx-border-radius: 8px;
+    -fx-border-width: 1px;
+    -fx-padding: 12px 18px;
+    -fx-cursor: hand;
+}
+
+.option-button:hover {
+    -fx-background-color: #1e293b;
+    -fx-border-color: #38bdf8;
+    -fx-text-fill: #ffffff;
+}
+
+.option-selected {
+    -fx-background-color: #1d4ed8;
+    -fx-border-color: #60a5fa;
+    -fx-text-fill: #ffffff;
+}
+
+.result-correct {
+    -fx-background-color: #064e3b;
+    -fx-border-color: #10b981;
+    -fx-border-radius: 6px;
+    -fx-background-radius: 6px;
+    -fx-padding: 12px 16px;
+    -fx-text-fill: #34d399;
+    -fx-font-size: 14px;
+    -fx-font-weight: bold;
+}
+
+.result-incorrect {
+    -fx-background-color: #451a1a;
+    -fx-border-color: #ef4444;
+    -fx-border-radius: 6px;
+    -fx-background-radius: 6px;
+    -fx-padding: 12px 16px;
+    -fx-text-fill: #fca5a5;
+    -fx-font-size: 14px;
+    -fx-font-weight: bold;
 }
