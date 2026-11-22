@@ -41,6 +41,16 @@ public class QuizBattleServerApp {
             }));
 
             log.info("QuizBattle Server running and accepting connections on port {}.", port);
+
+            // Keep main thread alive while server is running
+            while (server.isRunning()) {
+                try {
+                    Thread.sleep(1000);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            }
         } catch (Exception e) {
             log.error("Fatal error starting QuizBattle server: {}", e.getMessage(), e);
             System.exit(1);
