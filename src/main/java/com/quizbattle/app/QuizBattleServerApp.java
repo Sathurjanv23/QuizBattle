@@ -1,18 +1,18 @@
 package com.quizbattle.app;
 
+import com.quizbattle.server.DefaultServerMessageDispatcher;
 import com.quizbattle.server.QuizServer;
-import com.quizbattle.server.blocking.BlockingServerStub;
+import com.quizbattle.server.blocking.BlockingQuizServer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
  * Server application bootstrap entry point.
  *
- * <p>Execution Command:
- * <pre>
- * mvn compile exec:java -Dexec.mainClass="com.quizbattle.app.QuizBattleServerApp"
- * </pre>
- * </p>
+ * <p>Initializes the reference blocking TCP server for Member 1,
+ * wired to the transport-neutral {@link DefaultServerMessageDispatcher}.
+ * Member 2/4 can swap {@link BlockingQuizServer} with an NIO server implementation
+ * without modifying game logic or protocol handling.</p>
  */
 public class QuizBattleServerApp {
 
@@ -23,13 +23,15 @@ public class QuizBattleServerApp {
         int discoveryPort = AppConfig.getDiscoveryPort();
 
         log.info("====================================================");
-        log.info("Starting QuizBattle 2.0 Server Architecture Scaffold");
+        log.info("Starting QuizBattle 2.0 Server (Member 1 TCP Reference)");
         log.info("TCP Port: {} | UDP Discovery Port: {}", port, discoveryPort);
         log.info("Max Message Framing Cap: {} bytes (64 KiB)", AppConfig.getMaxMessageBytes());
-        log.info("Ready for Member 1 Blocking / Member 4 NIO server binding");
+        log.info("Transport: Blocking ServerSocket (Switchable)");
         log.info("====================================================");
 
-        QuizServer server = new BlockingServerStub(port);
+        DefaultServerMessageDispatcher dispatcher = new DefaultServerMessageDispatcher();
+        QuizServer server = new BlockingQuizServer(port, dispatcher);
+
         try {
             server.start();
 
@@ -38,7 +40,7 @@ public class QuizBattleServerApp {
                 server.stop();
             }));
 
-            log.info("QuizBattle Server scaffold initialized successfully.");
+            log.info("QuizBattle Server running and accepting connections on port {}.", port);
         } catch (Exception e) {
             log.error("Fatal error starting QuizBattle server: {}", e.getMessage(), e);
             System.exit(1);

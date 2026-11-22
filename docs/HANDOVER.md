@@ -1,63 +1,74 @@
-# Handover Guide: Ready for Member 1
+# Handover Guide: Ready for Member 2
 
-Welcome Member 1! The foundational architecture, protocol framing, domain models, and build configuration are established and verified. You can immediately begin your assignment without altering the directory structure.
-
----
-
-## 🎯 Member 1 Assignment Scope
-Implement the **basic TCP server and client networking loop**:
-1. Multi-threaded blocking TCP server (`ServerSocket`) accepting client connections on port 5000.
-2. Client connection loop implementing `NetworkClient` with background reading thread.
-3. Handle handshake (`CONNECT` -> `CONNECTED`) and single question delivery (`QUESTION` -> `ANSWER` -> `ANSWER_RESULT`).
+Welcome Member 2! Member 1 has completed the foundational TCP socket networking and basic JavaFX quiz client. The project is fully runnable end-to-end with automated test coverage.
 
 ---
 
-## 🚀 5-Step Handover Guide
+## 🎯 Member 2 Assignment Scope
+Member 2's primary focus is **NON-BLOCKING I/O (NIO) / CONCURRENCY & SCALABLE ROOM MANAGEMENT**:
+1. Replace the temporary `BlockingQuizServer` (`java.net.ServerSocket`) with an NIO or scalable concurrent transport without altering game logic or UI presentation.
+2. Maintain strict decoupling: the server transport communicates exclusively through `ServerMessageDispatcher` and `ClientSession`.
+3. Preserve all client protocol invariants, framing (`\n`), and message schemas.
 
-### Step 1: Sync Your Local Branch
-Fetch and branch off `chore/00-project-foundation` (or `main` after PR merge):
+---
+
+## 🧩 Switchable Architecture Interfaces
+
+Member 1 designed the server layer to be completely switchable:
+
+| Component | Responsibility | Status | Member 2 Action |
+|---|---|---|---|
+| `QuizServer` | Server lifecycle interface (`start()`, `stop()`, `getPort()`) | Stable | Implement `NioQuizServer` or concurrent server |
+| `ServerMessageDispatcher` | Routes incoming `Message` envelopes to game services | Stable | **Do not modify** - reuse directly |
+| `ClientSession` | Encapsulates client channel/socket state & session security | Stable | Implement `NioClientSession` wrapping `SocketChannel` |
+| `QuizRoomService` | Room lifecycle & member rosters | Stable | Enhance with fine-grained lock-free concurrency |
+| `DefaultQuizGameService` | 5 fixed questions & answer evaluation | Stable | **Do not modify** - reuse directly |
+| `JavaFX Client UI` | Welcome, Manual Connect, and Player Home | Stable | **Do not modify** - works seamlessly over any TCP server |
+
+---
+
+## 🚀 5-Step Handover Guide for Member 2
+
+### Step 1: Branch Off `main` (After PR 01 is Merged)
 ```bash
 git fetch origin
-git checkout -b feature/01-tcp-quiz origin/chore/00-project-foundation
-mvn -B clean test
+git checkout -b feature/02-nio-concurrency origin/main
+mvn clean test
 ```
-Verify all tests pass and your Java 21 environment is active.
+Verify that all 12 tests pass.
 
-### Step 2: Implement Blocking TCP Server in `server.blocking`
-- Open `src/main/java/com/quizbattle/server/blocking/BlockingServerStub.java`.
-- Rename or implement `BlockingQuizServer` implementing `QuizServer`.
-- Bind `ServerSocket` to `AppConfig.getServerPort()` (default: 5000).
-- In an accept loop, accept `Socket` connections and dispatch each to a worker thread (e.g. using `Executors.newCachedThreadPool()` or `Thread.ofVirtual().start()`).
-- In the client handler thread:
-  - Create a `ClientSession` implementation.
-  - Read lines from `BufferedReader` (UTF-8).
-  - Use `JsonMessageCodec.decode(line)` to obtain a `Message`.
-  - Pass the message to `ServerMessageDispatcher.dispatch(session, message)`.
+### Step 2: Implement `NioClientSession` in `server.nio`
+- Implement `ClientSession` wrapping a non-blocking `java.nio.channels.SocketChannel`.
+- Maintain write buffers or write queues for non-blocking socket writes without blocking selector threads.
 
-### Step 3: Implement Socket Network Client in `client.net`
-- Create `SocketNetworkClient.java` implementing `NetworkClient`.
-- In `connect(host, port)`:
-  - Open `new Socket(host, port)`.
-  - Launch a background daemon reading thread.
-  - Read lines ending in `\n`, decode via `JsonMessageCodec`.
-  - Invoke registered listeners via `UiCallbackDispatcher.runOnFxThread()`.
-- In `send(Message message)`:
-  - Encode message with `JsonMessageCodec.encodeToString(message)`.
-  - Write bytes to socket `OutputStream` and `flush()`.
+### Step 3: Implement `NioQuizServer` in `server.nio`
+- Extend or replace `NioServerStub.java`.
+- Open `ServerSocketChannel`, configure non-blocking mode, and register with `Selector` for `OP_ACCEPT`.
+- On `OP_READ`:
+  - Read incoming bytes into a per-channel `ByteBuffer`.
+  - Use `StreamFrameAccumulator` or buffer split on `\n` to reassemble complete lines.
+  - Decode with `JsonMessageCodec.decode(line)`.
+  - Dispatch via `ServerMessageDispatcher.dispatch(session, message)`.
 
-### Step 4: Wire Message Dispatch for Handshake & First Question
-- In `QuizBattleServerApp.java`, initialize your blocking server and register handlers for:
-  - `MessageType.CONNECT`: return `MessageType.CONNECTED` with generated `playerId`.
-  - `MessageType.START_QUIZ`: read a sample question from `resources/questions/sample_questions.json` and broadcast `MessageType.QUESTION`.
-  - `MessageType.ANSWER`: validate answer and send `MessageType.ANSWER_RESULT`.
+### Step 4: Swap Server Implementation in `QuizBattleServerApp`
+In `QuizBattleServerApp.java`:
+```java
+// Member 1 (temporary):
+// QuizServer server = new BlockingQuizServer(port, dispatcher);
 
-### Step 5: Verify With End-to-End Launch
-1. Launch Server in Terminal 1:
+// Member 2 (NIO):
+QuizServer server = new NioQuizServer(port, dispatcher);
+```
+Notice that zero business logic or client UI code needs to change!
+
+### Step 5: Verify End-to-End Compatibility
+1. Run automated tests: `mvn clean test`.
+2. Start your NIO server:
    ```bash
    mvn compile exec:java -Dexec.mainClass="com.quizbattle.app.QuizBattleServerApp"
    ```
-2. Launch Client in Terminal 2:
+3. Launch JavaFX Client:
    ```bash
-   mvn javafx:run
+   mvn compile exec:java -Dexec.mainClass="com.quizbattle.client.ClientLauncher"
    ```
-3. Type a username, click **"Join Arena"**, and verify the client connects and displays the question!
+4. Connect, join room, and submit answers. Verify that your NIO server delivers identical protocol messages without regression!

@@ -9,33 +9,59 @@
       "UDP requires a 3-way handshake before transmitting data"
     ],
     "correctOptionIndex": 0,
-    "timeLimitSeconds": 15,
+    "timeLimitSeconds": 20,
     "pointValue": 100
   },
   {
     "questionId": "q-102",
-    "text": "In Java NIO, which component allows a single thread to monitor multiple channels for I/O readiness?",
+    "text": "In Java network programming, which method accepts an incoming TCP client connection on ServerSocket?",
     "options": [
-      "ThreadPoolExecutor",
-      "Selector",
-      "ServerSocket",
-      "PipedInputStream"
+      "listen()",
+      "connect()",
+      "accept()",
+      "bind()"
     ],
-    "correctOptionIndex": 1,
-    "timeLimitSeconds": 15,
+    "correctOptionIndex": 2,
+    "timeLimitSeconds": 20,
     "pointValue": 100
   },
   {
     "questionId": "q-103",
     "text": "Why must all JavaFX UI updates triggered from background network threads run via Platform.runLater()?",
     "options": [
-      "To bypass JVM garbage collection pauses",
+      "To prevent garbage collection pauses during packet deserialization",
       "Because JavaFX scene graph nodes are not thread-safe and must be modified only on the JavaFX Application Thread",
-      "To encrypt network messages before display",
-      "To allow the garbage collector to serialize widgets"
+      "To compress network messages before rendering",
+      "To enable hardware acceleration on network sockets"
     ],
     "correctOptionIndex": 1,
-    "timeLimitSeconds": 15,
+    "timeLimitSeconds": 20,
+    "pointValue": 100
+  },
+  {
+    "questionId": "q-104",
+    "text": "What happens when readLine() is called on a BufferedReader wrapping a closed TCP Socket?",
+    "options": [
+      "It throws a NullPointerException immediately",
+      "It blocks indefinitely without returning",
+      "It returns null indicating end of stream (EOF)",
+      "It returns an empty string"
+    ],
+    "correctOptionIndex": 2,
+    "timeLimitSeconds": 20,
+    "pointValue": 100
+  },
+  {
+    "questionId": "q-105",
+    "text": "Why is framing delimiter (such as '\\n') necessary when transmitting JSON over a raw TCP socket stream?",
+    "options": [
+      "TCP is a byte-stream protocol with no intrinsic message boundaries; packets can be split or merged",
+      "JSON syntax requires trailing newlines to be valid RFC 8259",
+      "To satisfy Operating System file permissions on Windows and Linux",
+      "Because routers discard IP packets that lack trailing line feeds"
+    ],
+    "correctOptionIndex": 0,
+    "timeLimitSeconds": 20,
     "pointValue": 100
   }
 ]
