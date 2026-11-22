@@ -1,0 +1,41 @@
+[
+  {
+    "questionId": "q-101",
+    "text": "What is the primary difference between TCP and UDP?",
+    "options": [
+      "TCP is connection-oriented and reliable; UDP is connectionless and best-effort",
+      "UDP guarantees message ordering; TCP does not",
+      "TCP operates at the physical layer; UDP operates at the network layer",
+      "UDP requires a 3-way handshake before transmitting data"
+    ],
+    "correctOptionIndex": 0,
+    "timeLimitSeconds": 15,
+    "pointValue": 100
+  },
+  {
+    "questionId": "q-102",
+    "text": "In Java NIO, which component allows a single thread to monitor multiple channels for I/O readiness?",
+    "options": [
+      "ThreadPoolExecutor",
+      "Selector",
+      "ServerSocket",
+      "PipedInputStream"
+    ],
+    "correctOptionIndex": 1,
+    "timeLimitSeconds": 15,
+    "pointValue": 100
+  },
+  {
+    "questionId": "q-103",
+    "text": "Why must all JavaFX UI updates triggered from background network threads run via Platform.runLater()?",
+    "options": [
+      "To bypass JVM garbage collection pauses",
+      "Because JavaFX scene graph nodes are not thread-safe and must be modified only on the JavaFX Application Thread",
+      "To encrypt network messages before display",
+      "To allow the garbage collector to serialize widgets"
+    ],
+    "correctOptionIndex": 1,
+    "timeLimitSeconds": 15,
+    "pointValue": 100
+  }
+]
