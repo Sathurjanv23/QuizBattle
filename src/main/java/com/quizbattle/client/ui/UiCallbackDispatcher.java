@@ -27,9 +27,9 @@ public final class UiCallbackDispatcher {
             } else {
                 Platform.runLater(action);
             }
-        } catch (IllegalStateException e) {
+        } catch (Throwable t) {
             // JavaFX toolkit might not be initialized during headless tests
-            log.debug("JavaFX platform not initialized, executing action in caller thread: {}", e.getMessage());
+            log.debug("JavaFX platform not initialized, executing action in caller thread: {}", t.getMessage());
             action.run();
         }
     }

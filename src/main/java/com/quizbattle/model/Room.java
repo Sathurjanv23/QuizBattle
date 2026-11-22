@@ -39,6 +39,11 @@ public class Room {
         return roomId;
     }
 
+    @JsonProperty("roomCode")
+    public String getRoomCode() {
+        return roomId;
+    }
+
     public String getRoomName() {
         return roomName;
     }

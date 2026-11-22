@@ -2,13 +2,13 @@
 
 ## 1. Architectural Goals & Design Principles
 
-QuizBattle 2.0 is designed as a modular, concurrent, distributed system adhering to core clean-architecture principles:
+QuizBattle 2.0 is designed as a modular, concurrent, distributed system adhering to clean-architecture principles:
 
 1. **Separation of Concerns**: Network transport (I/O) is completely detached from business logic (scoring, room lobbies, trivia rules) and presentation (JavaFX).
-2. **Pluggable Transports**: Both Blocking (`java.net.ServerSocket`) and Non-blocking (`java.nio.channels.Selector`) implementations bind to the same transport-neutral `ServerMessageDispatcher`.
-3. **Thread Safety & Lock Granularity**: Room registries and player rosters use fine-grained concurrent collections (`ConcurrentHashMap`) or explicit state synchronizers rather than crude global locks.
+2. **Pluggable Transports**: Both Non-blocking (`java.nio.channels.Selector`) and Blocking (`java.net.ServerSocket`) implementations bind to the same transport-neutral `ServerMessageDispatcher`. The non-blocking Java NIO engine is the default production server.
+3. **Thread Safety & Lock Granularity**: Room lobbies and player rosters use fine-grained concurrent collections (`ConcurrentHashMap`) with per-room locks (`ReentrantLock`) rather than crude global locks.
 4. **Authoritative Server Security**:
-   - The client is **untrusted**. Clients NEVER supply authoritative identifiers (such as self-assigned `playerId` or `score`).
+   - The client is **untrusted**. Clients NEVER supply authoritative identifiers (such as self-assigned `playerId`, `score`, or host flags).
    - The server associates each physical socket/channel with a secure `ClientSession`.
    - On handshake (`CONNECT`), the server issues or confirms the `playerId` and binds it to that session.
    - All subsequent game mutations are validated against the calling session context.
@@ -16,7 +16,7 @@ QuizBattle 2.0 is designed as a modular, concurrent, distributed system adhering
 
 ---
 
-## 2. Package Organization & Dependency Rules
+## 2. Package Organization & Dependency Graph
 
 ```mermaid
 graph TD
@@ -26,62 +26,75 @@ graph TD
     Client --> ClientNet[client.net]
     ClientNet --> Protocol[protocol]
     ClientUI --> Model[model]
-    Server --> ServerBlocking[server.blocking]
-    Server --> ServerNio[server.nio]
+    Server --> ServerNio[server.nio - Member 2 Default]
+    Server --> ServerBlocking[server.blocking - Member 1 Ref]
+    Server --> ServerConcurrent[server.concurrent - Member 2 Room Manager]
     Server --> ServerGame[server.game]
-    Server --> ServerConcurrent[server.concurrent]
-    Server --> ServerSync[server.sync]
+    Server --> ServerSync[server.sync - Member 3]
     ServerGame --> Model
-    ServerBlocking --> Protocol
     ServerNio --> Protocol
-    Discovery[discovery] --> Protocol
+    ServerBlocking --> Protocol
+    Discovery[discovery - Member 5] --> Protocol
 ```
 
 ### Dependency Rules:
-- `protocol` and `model` are leaf dependencies: they have no dependencies on `client`, `server`, or `ui`.
+- `protocol` and `model` are leaf dependencies: they have zero dependencies on `client`, `server`, or `ui`.
 - `client.ui` communicates with `client.net` strictly through the `NetworkClient` interface.
-- `server.blocking` and `server.nio` communicate with the game engine strictly through `ServerMessageDispatcher` and `ClientSession`.
+- `server.nio` and `server.blocking` communicate with the game engine strictly through `ServerMessageDispatcher` and `ClientSession`.
 - **Zero Circular Dependencies**: Cyclic package imports are strictly prohibited.
 
 ---
 
-## 3. Server Architecture
+## 3. Server Architecture: Java NIO Non-Blocking Engine
 
-### 3.1 Session Management
-Each connected client has an active `ClientSession` instance encapsulating:
-- Socket/Channel reference
-- Session ID (UUID)
-- Authenticated `playerId` and `username`
-- Associated `roomId` (if currently in a lobby or active match)
-- Send queue / write buffer
+### 3.1 Non-Blocking I/O Multiplexing (`server.nio`)
+The default server engine is `NioQuizServer`, implementing a single-threaded selector event loop serving hundreds of concurrent connections without thread-per-client overhead:
 
-### 3.2 Dispatcher Layer (`ServerMessageDispatcher`)
-When a complete newline-terminated JSON message arrives from a socket:
-1. It is decoded into a `Message` object by `MessageCodec`.
-2. The dispatcher inspects `Message.getType()`.
-3. If an error occurs (e.g. malformed JSON or message exceeding 64 KiB), the server returns an `ERROR` message with the corresponding `requestId`.
-4. The dispatcher invokes the registered handler `(session, message) -> ...`.
+1. **ServerSocketChannel & Selector**:
+   - `ServerSocketChannel` binds to TCP port `5000` (or dynamic ephemeral port for tests).
+   - Configured non-blocking and registered with `Selector` for `OP_ACCEPT`.
+2. **OP_ACCEPT Event Handling**:
+   - Accepts incoming `SocketChannel`, configures non-blocking and `TCP_NODELAY`.
+   - Creates a server-authoritative `NioClientSession` and attaches it to the `SelectionKey`.
+   - Registers for `OP_READ`.
+3. **OP_READ Event Handling & Stream Framing**:
+   - Reads incoming data into a reusable `ByteBuffer`.
+   - Passes bytes to `StreamFrameAccumulator` in `NioClientSession`.
+   - Assembles newline-delimited (`\n`) JSON frames up to 64 KiB cap.
+   - Handles partial reads, multi-message packets, and split UTF-8 sequences.
+   - Dispatches parsed messages onto an asynchronous `workerPool` (`quizbattle-nio-worker`) so game logic never blocks the selector thread!
+4. **OP_WRITE Event Handling & Outbound Queues**:
+   - Each `NioClientSession` maintains a bounded outbound message queue (`ConcurrentLinkedQueue<ByteBuffer>`).
+   - When outbound messages are queued, the session registers `OP_WRITE` interest via `server.requestWrite(session)` and calls `selector.wakeup()`.
+   - In `handleWrite()`, the selector flushes ByteBuffers to `SocketChannel.write()`.
+   - If a partial write occurs (socket send buffer full), unsent bytes remain in `currentOutgoingBuffer` and `OP_WRITE` remains active.
+   - When the queue is fully drained, `OP_WRITE` is cleared immediately to prevent busy-spinning!
 
-### 3.3 Blocking vs NIO Engines
-- **Blocking (`server.blocking`) - Member 1**:
-  - One thread per client connection.
-  - Blocking reads on `BufferedReader` or `InputStream` until `\n`.
-  - Simple, robust baseline implementation.
-- **NIO Multiplexing (`server.nio`) - Member 4**:
-  - Single selector thread managing hundreds of `SocketChannel` instances without thread-per-client overhead.
-  - Channels register for `OP_READ` and `OP_WRITE`.
-  - Non-blocking frame accumulator assembling partial chunks into complete JSON lines.
+### 3.2 Thread-Safe Worker & Scheduler Decoupling
+- Network I/O is isolated to the NIO selector thread.
+- Incoming messages are dispatched via `workerPool`.
+- Per-session message ordering is preserved using synchronized dispatch locks.
+- Future Member 3 background scheduler threads submit events through thread-safe `server.submitTask(Runnable)` and `session.send(Message)` with `selector.wakeup()`.
 
 ---
 
-## 4. Client Architecture
+## 4. Multiplayer Room Management Architecture (`server.concurrent`)
 
-### 4.1 JavaFX UI Architecture
-- **Root Container**: `NavigationContainer` provides persistent top app bar, live connection indicator, and view stack for seamless navigation.
-- **Views**: Clean decoupled views (e.g. `WelcomeView`, and upcoming `LobbyView`, `QuizArenaView`, `LeaderboardView`).
-- **Styling**: Central stylesheet `resources/styles/app.css` using modern dark mode colors (Slate, Sky, Indigo).
+### 4.1 Concurrent Room Manager (`ConcurrentRoomManager`)
+- **Server-Authoritative Room Codes**: Unique 6-character alphanumeric uppercase codes (e.g. `QB42KD`).
+- **Fine-Grained Concurrency**: Per-room `ReentrantLock` instances ensure mutations in Room A never block operations in Room B.
+- **Dynamic Host Migration**: When a host departs or disconnects, the server automatically promotes the next remaining participant to Host and broadcasts updated `ROOM_STATE`.
+- **Automatic Lifecycle Cleanup**: When all participants leave an ephemeral room, the room is safely de-registered and resources are released.
+- **Room Isolation**: Messages, question deliveries, and room states are strictly scoped to sessions whose `currentRoomId` matches the target room.
 
-### 4.2 Network Client Threading
-- Network I/O runs entirely on background daemon threads.
-- Inbound messages from the TCP socket are decoded by `MessageCodec` and dispatched to registered UI listeners.
-- `UiCallbackDispatcher` wraps all callback executions in `Platform.runLater()`, preventing `IllegalStateException: Not on FX application thread`.
+---
+
+## 5. Client JavaFX UI Architecture
+
+- **Navigation Container (`NavigationContainer`)**: Root container managing top bar, live connection status indicator, back stack, and scene transitions.
+- **Screen 1 — Host Dashboard (`HostDashboardView`)**: Displays player alias, TCP connection badge, "Create Room", "Join Room by Code", "Quick Play (Default Room)", and "Disconnect".
+- **Screen 2 — Create Room Confirmation (`CreateRoomView`)**: Shows authoritative room code, "Copy Room Code" action, host status, and navigation to lobby.
+- **Screen 3 — Join Room (`JoinRoomView`)**: Input field with auto-uppercase formatting, room code validation, loading spinner, and structured error reporting.
+- **Screen 4 — Multiplayer Lobby (`MultiplayerLobbyView`)**: Live synchronized roster, player count counter, host status indicator, "Leave Room" trigger, and host-only "Start Quiz" button.
+- **Screen 5 — Player Home & Quiz Arena (`PlayerHomeView`)**: Active trivia question display, multiple-choice buttons (A, B, C, D), answer feedback banner, and score counter.
+- **UI Thread Safety (`UiCallbackDispatcher`)**: All socket callbacks invoke `Platform.runLater()` to maintain UI thread integrity and handle headless testing gracefully.
