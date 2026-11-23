@@ -1,9 +1,11 @@
 package com.quizbattle.model;
 
+import com.quizbattle.server.game.DefaultQuizGameService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -54,5 +56,17 @@ class ModelSmokeTest {
         list.sort(null);
 
         assertEquals("p2", list.get(0).getPlayerId(), "Bob with score 250 must sort ahead of Alice with score 100");
+    }
+
+    @Test
+    @DisplayName("Quiz category loads a category-specific question bank")
+    void testQuizCategorySelection() {
+        DefaultQuizGameService gameService = new DefaultQuizGameService();
+        gameService.setCategory("room-java", "Java");
+
+        Optional<Question> question = gameService.advanceQuestion("room-java");
+
+        assertTrue(question.isPresent());
+        assertEquals("java-101", question.get().getQuestionId());
     }
 }

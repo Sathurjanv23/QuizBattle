@@ -26,6 +26,7 @@ import java.net.URL;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ForkJoinPool;
+import java.util.function.Consumer;
 
 /**
  * JavaFX Client Application orchestrating Welcome, Manual Connect,
@@ -371,11 +372,12 @@ public class QuizBattleClientApp extends Application {
         )));
     }
 
-    private void startQuizInRoom() {
+    private void startQuizInRoom(String category) {
         log.info("Host requesting START_QUIZ in room '{}'...", currentRoomCode);
         String reqId = UUID.randomUUID().toString();
         networkClient.send(Message.request(MessageType.START_QUIZ, reqId, Map.of(
-                "roomId", currentRoomCode != null ? currentRoomCode : "room-default"
+                "roomId", currentRoomCode != null ? currentRoomCode : "room-default",
+                "category", category != null ? category : "General Trivia"
         )));
     }
 

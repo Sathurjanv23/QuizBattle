@@ -138,7 +138,7 @@ class FiveClientDemonstrationTest {
             JsonNode payload = msg.getPayload();
             if (payload != null && payload.has("playerCount")) {
                 int c = payload.get("playerCount").asInt();
-                finalCount.set(c);
+                finalCount.updateAndGet(current -> Math.max(current, c));
                 if (c == 5) {
                     fivePlayersLatch.countDown();
                 }
