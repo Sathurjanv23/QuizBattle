@@ -95,9 +95,14 @@ public class SocketNetworkClient implements NetworkClient {
 
     private void readLoop() {
         log.debug("Client reading loop started");
+        BufferedReader localReader = reader;
+        if (localReader == null) {
+            log.debug("Client reader unavailable; terminating read loop");
+            return;
+        }
         try {
             String line;
-            while ((line = reader.readLine()) != null) {
+            while ((line = localReader.readLine()) != null) {
                 if (line.trim().isEmpty()) {
                     continue;
                 }
