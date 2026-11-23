@@ -1,0 +1,42 @@
+[
+  {
+    "questionId": "net-101",
+    "text": "Which transport protocol provides reliable ordered delivery?",
+    "options": ["UDP", "TCP", "ICMP", "ARP"],
+    "correctOptionIndex": 1,
+    "timeLimitSeconds": 20,
+    "pointValue": 100
+  },
+  {
+    "questionId": "net-102",
+    "text": "What is the default port for HTTPS?",
+    "options": ["80", "443", "21", "22"],
+    "correctOptionIndex": 1,
+    "timeLimitSeconds": 20,
+    "pointValue": 100
+  },
+  {
+    "questionId": "net-103",
+    "text": "Which address is used for IPv4 loopback?",
+    "options": ["0.0.0.0", "127.0.0.1", "255.255.255.255", "192.168.0.1"],
+    "correctOptionIndex": 1,
+    "timeLimitSeconds": 20,
+    "pointValue": 100
+  },
+  {
+    "questionId": "net-104",
+    "text": "Which protocol translates domain names into IP addresses?",
+    "options": ["DNS", "SMTP", "FTP", "DHCP"],
+    "correctOptionIndex": 0,
+    "timeLimitSeconds": 20,
+    "pointValue": 100
+  },
+  {
+    "questionId": "net-105",
+    "text": "What is the purpose of TCP port 22?",
+    "options": ["HTTP", "SSH", "DNS", "Email"],
+    "correctOptionIndex": 1,
+    "timeLimitSeconds": 20,
+    "pointValue": 100
+  }
+]

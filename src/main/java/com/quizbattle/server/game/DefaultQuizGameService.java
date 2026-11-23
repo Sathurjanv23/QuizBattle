@@ -30,6 +30,8 @@ public class DefaultQuizGameService implements QuizGameService {
     private final List<Question> questionBank;
     private final Map<String, AtomicInteger> roomQuestionIndex = new ConcurrentHashMap<>();
     private final Map<String, Map<String, AtomicInteger>> roomPlayerScores = new ConcurrentHashMap<>();
+    private final Map<String, String> roomCategories = new ConcurrentHashMap<>();
+    private final Map<String, List<Question>> categoryQuestionBanks = new ConcurrentHashMap<>();
 
     public DefaultQuizGameService() {
         this("/questions/sample_questions.json");
@@ -56,6 +58,41 @@ public class DefaultQuizGameService implements QuizGameService {
         }
 
         this.questionBank = Collections.unmodifiableList(loaded);
+        categoryQuestionBanks.put("General Trivia", this.questionBank);
+        categoryQuestionBanks.put("Java", loadQuestionBank("/questions/java_questions.json", this.questionBank));
+        categoryQuestionBanks.put("Networking", loadQuestionBank("/questions/networking_questions.json", this.questionBank));
+    }
+
+    private List<Question> loadQuestionBank(String resourcePath, List<Question> fallback) {
+        try (InputStream in = getClass().getResourceAsStream(resourcePath)) {
+            if (in != null) {
+                ObjectMapper mapper = new ObjectMapper();
+                List<Question> questions = mapper.readValue(in, new TypeReference<List<Question>>() {});
+                if (!questions.isEmpty()) {
+                    log.info("Loaded {} questions from category resource {}", questions.size(), resourcePath);
+                    return Collections.unmodifiableList(questions);
+                }
+            }
+        } catch (Exception e) {
+            log.error("Failed to load category questions from {}: {}", resourcePath, e.getMessage());
+        }
+        log.warn("Category resource {} not found. Falling back to the general question bank.", resourcePath);
+        return fallback;
+    }
+
+    public void setCategory(String roomId, String category) {
+        String resolvedCategory = category != null && categoryQuestionBanks.containsKey(category)
+                ? category
+                : "General Trivia";
+        roomCategories.put(roomId, resolvedCategory);
+        roomQuestionIndex.computeIfAbsent(roomId, k -> new AtomicInteger(-1)).set(-1);
+        roomPlayerScores.computeIfAbsent(roomId, k -> new ConcurrentHashMap<>());
+        log.info("Room {} selected quiz category {}", roomId, resolvedCategory);
+    }
+
+    private List<Question> getQuestionBank(String roomId) {
+        String category = roomCategories.getOrDefault(roomId, "General Trivia");
+        return categoryQuestionBanks.getOrDefault(category, questionBank);
     }
 
     @Override
@@ -67,37 +104,45 @@ public class DefaultQuizGameService implements QuizGameService {
 
     @Override
     public Optional<Question> nextQuestion(String roomId) {
-        if (questionBank.isEmpty()) {
+        List<Question> activeQuestionBank = getQuestionBank(roomId);
+        if (activeQuestionBank.isEmpty()) {
             return Optional.empty();
         }
         AtomicInteger idx = roomQuestionIndex.computeIfAbsent(roomId, k -> new AtomicInteger(0));
-        int current = idx.getAndIncrement() % questionBank.size();
-        return Optional.of(questionBank.get(current).forClient());
+        int current = idx.getAndIncrement() % activeQuestionBank.size();
+        return Optional.of(activeQuestionBank.get(current).forClient());
     }
 
     public Optional<Question> getCurrentQuestion(String roomId) {
-        if (questionBank.isEmpty()) {
+        List<Question> activeQuestionBank = getQuestionBank(roomId);
+        if (activeQuestionBank.isEmpty()) {
             return Optional.empty();
         }
         AtomicInteger idx = roomQuestionIndex.computeIfAbsent(roomId, k -> new AtomicInteger(0));
-        int current = Math.abs(idx.get()) % questionBank.size();
-        return Optional.of(questionBank.get(current).forClient());
+        int current = Math.abs(idx.get()) % activeQuestionBank.size();
+        return Optional.of(activeQuestionBank.get(current).forClient());
     }
 
     public Optional<Question> advanceQuestion(String roomId) {
-        if (questionBank.isEmpty()) {
+        List<Question> activeQuestionBank = getQuestionBank(roomId);
+        if (activeQuestionBank.isEmpty()) {
             return Optional.empty();
         }
         AtomicInteger idx = roomQuestionIndex.computeIfAbsent(roomId, k -> new AtomicInteger(0));
-        int next = idx.incrementAndGet() % questionBank.size();
-        return Optional.of(questionBank.get(next).forClient());
+        int next = idx.incrementAndGet() % activeQuestionBank.size();
+        if (next < 0) {
+            next = 0;
+            idx.set(0);
+        }
+        return Optional.of(activeQuestionBank.get(next).forClient());
     }
 
     @Override
     public boolean submitAnswer(String roomId, String playerId, String questionId, int selectedOptionIndex) {
+        List<Question> activeQuestionBank = getQuestionBank(roomId);
         AtomicInteger idx = roomQuestionIndex.computeIfAbsent(roomId, k -> new AtomicInteger(0));
-        int currentIdx = Math.abs(idx.get()) % questionBank.size();
-        Question activeQuestion = questionBank.get(currentIdx);
+        int currentIdx = idx.get() >= 0 ? idx.get() % activeQuestionBank.size() : 0;
+        Question activeQuestion = activeQuestionBank.get(currentIdx);
 
         boolean correct = false;
         if (activeQuestion.getQuestionId().equals(questionId)) {
@@ -105,7 +150,7 @@ public class DefaultQuizGameService implements QuizGameService {
             correct = correctIdx != null && correctIdx == selectedOptionIndex;
         } else {
             // Also search question bank in case of slight delay
-            for (Question q : questionBank) {
+            for (Question q : activeQuestionBank) {
                 if (q.getQuestionId().equals(questionId)) {
                     Integer correctIdx = q.getCorrectOptionIndex();
                     correct = correctIdx != null && correctIdx == selectedOptionIndex;

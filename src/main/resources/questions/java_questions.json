@@ -1,0 +1,42 @@
+[
+  {
+    "questionId": "java-101",
+    "text": "Which Java keyword prevents a class from being extended?",
+    "options": ["final", "static", "private", "abstract"],
+    "correctOptionIndex": 0,
+    "timeLimitSeconds": 20,
+    "pointValue": 100
+  },
+  {
+    "questionId": "java-102",
+    "text": "Which collection does not allow duplicate elements?",
+    "options": ["List", "Set", "Queue", "ArrayList"],
+    "correctOptionIndex": 1,
+    "timeLimitSeconds": 20,
+    "pointValue": 100
+  },
+  {
+    "questionId": "java-103",
+    "text": "Which package contains the String class?",
+    "options": ["java.io", "java.lang", "java.util", "java.net"],
+    "correctOptionIndex": 1,
+    "timeLimitSeconds": 20,
+    "pointValue": 100
+  },
+  {
+    "questionId": "java-104",
+    "text": "What is the default value of a boolean instance field?",
+    "options": ["true", "false", "null", "0"],
+    "correctOptionIndex": 1,
+    "timeLimitSeconds": 20,
+    "pointValue": 100
+  },
+  {
+    "questionId": "java-105",
+    "text": "Which method is the entry point of a Java application?",
+    "options": ["start()", "main()", "run()", "execute()"],
+    "correctOptionIndex": 1,
+    "timeLimitSeconds": 20,
+    "pointValue": 100
+  }
+]

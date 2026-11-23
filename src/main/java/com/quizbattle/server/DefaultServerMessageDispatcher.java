@@ -280,6 +280,12 @@ public class DefaultServerMessageDispatcher implements ServerMessageDispatcher {
             }
         }
 
+        JsonNode payload = message.getPayload();
+        String category = payload != null && payload.has("category")
+                ? payload.get("category").asText("General Trivia")
+                : "General Trivia";
+        gameService.setCategory(roomId, category);
+
         Optional<Question> nextQ = gameService.advanceQuestion(roomId);
         if (nextQ.isPresent()) {
             broadcastToRoom(roomId, Message.event(MessageType.QUESTION, nextQ.get()));
