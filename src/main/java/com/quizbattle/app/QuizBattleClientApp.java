@@ -10,6 +10,7 @@ import com.quizbattle.client.ui.JoinRoomView;
 import com.quizbattle.client.ui.ManualConnectView;
 import com.quizbattle.client.ui.MultiplayerLobbyView;
 import com.quizbattle.client.ui.NavigationContainer;
+import com.quizbattle.client.ui.QuizCategoryView;
 import com.quizbattle.client.ui.PlayerHomeView;
 import com.quizbattle.client.ui.UiCallbackDispatcher;
 import com.quizbattle.client.ui.WelcomeView;
@@ -306,10 +307,21 @@ public class QuizBattleClientApp extends Application {
                 currentPlayerId,
                 currentUsername,
                 currentHostPort,
-                this::startQuizInRoom,
+                this::showQuizCategoryScreen,
                 this::leaveCurrentRoom
         );
         rootContainer.navigateTo(multiplayerLobbyView);
+    }
+
+    /**
+     * Opens the host-only quiz category selection screen.
+     */
+    private void showQuizCategoryScreen() {
+        QuizCategoryView categoryView = new QuizCategoryView(
+                this::startQuizInRoom,
+                rootContainer::navigateBack
+        );
+        rootContainer.navigateTo(categoryView);
     }
 
     /**
