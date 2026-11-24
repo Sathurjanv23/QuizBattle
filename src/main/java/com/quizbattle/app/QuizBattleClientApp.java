@@ -5,6 +5,7 @@ import com.quizbattle.client.net.ClientConnectionState;
 import com.quizbattle.client.net.NetworkClient;
 import com.quizbattle.client.net.SocketNetworkClient;
 import com.quizbattle.client.ui.CreateRoomView;
+import com.quizbattle.client.ui.CategorySelectionView;
 import com.quizbattle.client.ui.HostDashboardView;
 import com.quizbattle.client.ui.JoinRoomView;
 import com.quizbattle.client.ui.ManualConnectView;
@@ -50,6 +51,7 @@ public class QuizBattleClientApp extends Application {
     private CreateRoomView createRoomView;
     private JoinRoomView joinRoomView;
     private MultiplayerLobbyView multiplayerLobbyView;
+    private CategorySelectionView categorySelectionView;
     private PlayerHomeView playerHomeView;
 
     @Override
@@ -306,10 +308,23 @@ public class QuizBattleClientApp extends Application {
                 currentPlayerId,
                 currentUsername,
                 currentHostPort,
-                this::startQuizInRoom,
+                this::showCategorySelectionScreen,
                 this::leaveCurrentRoom
         );
         rootContainer.navigateTo(multiplayerLobbyView);
+    }
+
+    /**
+    * SCREEN 5 — QUIZ CATEGORY SELECTION
+    */
+    private void showCategorySelectionScreen() {
+       categorySelectionView = new CategorySelectionView(
+               currentRoomName != null ? currentRoomName : "Multiplayer Arena",
+               currentUsername,
+               this::startQuizInRoom,
+               this::showMultiplayerLobbyScreen
+       );
+       rootContainer.navigateTo(categorySelectionView);
     }
 
     /**

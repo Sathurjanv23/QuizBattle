@@ -6,7 +6,6 @@ import javafx.geometry.Pos;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
-import javafx.scene.control.ComboBox;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
 import javafx.scene.layout.HBox;
@@ -14,8 +13,6 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.function.Consumer;
 
 /**
@@ -28,7 +25,7 @@ public class MultiplayerLobbyView extends VBox {
     private final String currentPlayerId;
     private final String currentUsername;
     private final String hostPort;
-    private final Consumer<String> onStartQuizRequested;
+    private final Runnable onSelectCategoryRequested;
     private final Runnable onLeaveRoomRequested;
 
     private String roomCode;
@@ -43,8 +40,7 @@ public class MultiplayerLobbyView extends VBox {
     private final Label hostStatusLabel;
     private final Label playerCountBadge;
     private final VBox playerRosterBox;
-    private final ComboBox<String> categorySelector;
-    private final Button startQuizButton;
+    private final Button selectCategoryButton;
     private final Label startQuizHint;
     private final Label copyFeedback;
 
@@ -55,7 +51,7 @@ public class MultiplayerLobbyView extends VBox {
             String currentPlayerId,
             String currentUsername,
             String hostPort,
-            Consumer<String> onStartQuizRequested,
+            Runnable onSelectCategoryRequested,
             Runnable onLeaveRoomRequested) {
         super(16);
         this.roomCode = roomCode;
@@ -63,7 +59,7 @@ public class MultiplayerLobbyView extends VBox {
         this.currentPlayerId = currentPlayerId;
         this.currentUsername = currentUsername;
         this.hostPort = hostPort;
-        this.onStartQuizRequested = onStartQuizRequested;
+        this.onSelectCategoryRequested = onSelectCategoryRequested;
         this.onLeaveRoomRequested = onLeaveRoomRequested;
 
         getStyleClass().add("player-home-container");
@@ -165,35 +161,28 @@ public class MultiplayerLobbyView extends VBox {
 
         rosterSection.getChildren().addAll(rosterTitle, rosterScroll);
 
-        // 4. Host Action Section (Start Quiz)
+        // 4. Host Action Section (Category Selection)
         VBox actionSection = new VBox(10);
         actionSection.setAlignment(Pos.CENTER);
         actionSection.setPadding(new Insets(12));
 
-        Label categoryLabel = new Label("Quiz category");
+        Label categoryLabel = new Label("Ready to play?");
         categoryLabel.getStyleClass().add("field-label");
 
-        categorySelector = new ComboBox<>();
-        categorySelector.getItems().addAll("General Trivia", "Java", "Networking");
-        categorySelector.setValue("General Trivia");
-        categorySelector.setMaxWidth(360);
-        categorySelector.setDisable(true);
-
-        startQuizButton = new Button("🚀 Start Quiz (Host)");
-        startQuizButton.getStyleClass().add("primary-button");
-        startQuizButton.setMaxWidth(360);
-        startQuizButton.setStyle("-fx-font-size: 15px; -fx-padding: 12px 24px;");
-        startQuizButton.setOnAction(e -> {
-            startQuizButton.setDisable(true);
-            if (onStartQuizRequested != null) {
-                onStartQuizRequested.accept(categorySelector.getValue());
+        selectCategoryButton = new Button("🎯 Select Quiz Category");
+        selectCategoryButton.getStyleClass().add("primary-button");
+        selectCategoryButton.setMaxWidth(360);
+        selectCategoryButton.setStyle("-fx-font-size: 15px; -fx-padding: 12px 24px;");
+        selectCategoryButton.setOnAction(e -> {
+            if (onSelectCategoryRequested != null) {
+                onSelectCategoryRequested.run();
             }
         });
 
         startQuizHint = new Label("Waiting for host to start the quiz round...");
         startQuizHint.getStyleClass().add("card-subtitle");
 
-        actionSection.getChildren().addAll(categoryLabel, categorySelector, startQuizButton, startQuizHint);
+        actionSection.getChildren().addAll(categoryLabel, selectCategoryButton, startQuizHint);
 
         getChildren().addAll(topBar, metaCard, rosterSection, actionSection);
 
@@ -252,14 +241,12 @@ public class MultiplayerLobbyView extends VBox {
 
             // Update Start Quiz button controls
             if (isHost) {
-                categorySelector.setDisable(false);
-                startQuizButton.setDisable(false);
-                startQuizButton.setText("🚀 Start Quiz (Host)");
-                startQuizHint.setText("You are the host! Click above when participants are ready to begin.");
+                selectCategoryButton.setDisable(false);
+                selectCategoryButton.setText("🎯 Select Quiz Category");
+                startQuizHint.setText("You are the host! Choose a category when participants are ready.");
             } else {
-                categorySelector.setDisable(true);
-                startQuizButton.setDisable(true);
-                startQuizButton.setText("⏳ Waiting for Host...");
+                selectCategoryButton.setDisable(true);
+                selectCategoryButton.setText("⏳ Waiting for Host...");
                 startQuizHint.setText("Only the host (" + (hostUsername != null ? hostUsername : "Host") + ") can start the quiz.");
             }
         });

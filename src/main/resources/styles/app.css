@@ -61,6 +61,45 @@
     -fx-text-fill: #cbd5e1;
 }
 
+.category-eyebrow {
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #38bdf8;
+    -fx-letter-spacing: 1px;
+}
+
+.category-selection-label {
+    -fx-font-size: 14px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #a5b4fc;
+    -fx-padding: 8px 14px;
+    -fx-background-color: #1e293b;
+    -fx-background-radius: 8px;
+}
+
+.category-choice {
+    -fx-background-color: #0f172a;
+    -fx-text-fill: #e2e8f0;
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+    -fx-background-radius: 8px;
+    -fx-border-color: #475569;
+    -fx-border-radius: 8px;
+    -fx-padding: 12px 10px;
+    -fx-cursor: hand;
+}
+
+.category-choice:hover {
+    -fx-background-color: #1e293b;
+    -fx-border-color: #38bdf8;
+}
+
+.category-choice-selected {
+    -fx-background-color: #3730a3;
+    -fx-border-color: #818cf8;
+    -fx-text-fill: #ffffff;
+}
+
 /* Form Inputs */
 .input-field {
     -fx-background-color: #0f172a;
