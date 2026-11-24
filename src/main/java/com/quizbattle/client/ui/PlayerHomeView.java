@@ -41,6 +41,8 @@ public class PlayerHomeView extends VBox {
 
     private Question currentQuestion;
     private int currentScore = 0;
+    private boolean canAdvance = false;
+    private boolean answeredCurrent = false;
 
     @SuppressWarnings("this-escape")
     public PlayerHomeView(
@@ -151,7 +153,7 @@ public class PlayerHomeView extends VBox {
         HBox actionRow = new HBox(12);
         actionRow.setAlignment(Pos.CENTER_RIGHT);
 
-        nextQuestionButton = new Button("Next Question ➔");
+        nextQuestionButton = new Button("End Question ➔ Leaderboard");
         nextQuestionButton.getStyleClass().add("primary-button");
         nextQuestionButton.setVisible(false);
         nextQuestionButton.setManaged(false);
@@ -194,8 +196,10 @@ public class PlayerHomeView extends VBox {
         optionButtons.clear();
         resultBanner.setVisible(false);
         resultBanner.setManaged(false);
-        nextQuestionButton.setVisible(false);
-        nextQuestionButton.setManaged(false);
+        answeredCurrent = false;
+        // Host-only control: closes the question on the server (QUESTION_CLOSED + LEADERBOARD)
+        nextQuestionButton.setVisible(canAdvance);
+        nextQuestionButton.setManaged(canAdvance);
         nextQuestionButton.setDisable(false);
 
         List<String> options = question.getOptions();
@@ -226,7 +230,17 @@ public class PlayerHomeView extends VBox {
         }
     }
 
-    public void displayAnswerResult(boolean correct, int pointsAwarded, int totalScore) {
+    /** Whether this player may close/advance questions (room host, or anyone in quick play). */
+    public void setCanAdvance(boolean canAdvance) {
+        this.canAdvance = canAdvance;
+        if (currentQuestion != null) {
+            nextQuestionButton.setVisible(canAdvance);
+            nextQuestionButton.setManaged(canAdvance);
+        }
+    }
+
+    /** Shows the server's verdict for this player's answer. The score shown is the server total. */
+    public void displayAnswerResult(boolean accepted, String rejectReason, boolean correct, int pointsAwarded, int totalScore) {
         this.currentScore = totalScore;
         scoreBadge.setText("Score: " + totalScore + " pts");
 
@@ -234,6 +248,19 @@ public class PlayerHomeView extends VBox {
         resultBanner.setManaged(true);
         resultBanner.getStyleClass().removeAll("result-correct", "result-incorrect");
 
+        if (!accepted) {
+            String why = switch (rejectReason == null ? "" : rejectReason) {
+                case "DUPLICATE" -> "you already answered this question";
+                case "LATE" -> "the question was already closed";
+                case "WRONG_ROOM" -> "you are not a participant of this room's quiz";
+                default -> "no quiz is running";
+            };
+            resultBanner.setText("⚠ Answer not counted: " + why + ". Total Score: " + totalScore + " pts");
+            resultBanner.getStyleClass().add("result-incorrect");
+            return;
+        }
+
+        answeredCurrent = true;
         if (correct) {
             resultBanner.setText("✓ Correct! +" + pointsAwarded + " points. Total Score: " + totalScore + " pts");
             resultBanner.getStyleClass().add("result-correct");
@@ -241,10 +268,29 @@ public class PlayerHomeView extends VBox {
             resultBanner.setText("✗ Incorrect choice. Total Score: " + totalScore + " pts");
             resultBanner.getStyleClass().add("result-incorrect");
         }
+    }
 
-        nextQuestionButton.setVisible(true);
-        nextQuestionButton.setManaged(true);
-        nextQuestionButton.setDisable(false);
+    /** QUESTION_CLOSED: lock the options and reveal the correct one. */
+    public void onQuestionClosed(String questionId, int correctOptionIndex) {
+        if (currentQuestion == null || !currentQuestion.getQuestionId().equals(questionId)) {
+            return;
+        }
+        for (int i = 0; i < optionButtons.size(); i++) {
+            Button b = optionButtons.get(i);
+            b.setDisable(true);
+            if (i == correctOptionIndex) {
+                b.getStyleClass().add("option-correct");
+            }
+        }
+        nextQuestionButton.setVisible(false);
+        nextQuestionButton.setManaged(false);
+        if (!answeredCurrent) {
+            resultBanner.setVisible(true);
+            resultBanner.setManaged(true);
+            resultBanner.getStyleClass().removeAll("result-correct", "result-incorrect");
+            resultBanner.getStyleClass().add("result-incorrect");
+            resultBanner.setText("⌛ Question closed before you answered.");
+        }
     }
 
     public int getCurrentScore() {

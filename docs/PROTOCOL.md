@@ -36,7 +36,7 @@ Every message on the wire is a single-line JSON object:
 
 1. **Untrusted Client**: The client NEVER sends authoritative game data such as player scores or arbitrary target `playerId`.
 2. **Session Association**: The server maps each socket connection to an internal `ClientSession`. On `CONNECT`, the server assigns/authenticates the player and stores this state in the session.
-3. **Action Authorization**: When a client requests `CREATE_ROOM`, `JOIN_ROOM`, `START_QUIZ`, or `ANSWER`, the server derives the actor's identity solely from the socket's `ClientSession`.
+3. **Action Authorization**: When a client requests `CREATE_ROOM`, `JOIN_ROOM`, `START_QUIZ`, `NEXT_QUESTION`, or `ANSWER`, the server derives the actor's identity solely from the socket's `ClientSession`.
 
 ---
 
@@ -121,14 +121,29 @@ Broadcast to all room members whenever a player joins, departs, disconnects, or 
 
 ### 4.3 Quiz Flow
 
+Scoring is server-authoritative (Member 5, `com.quizbattle.server.sync.ScoreManager`): **10 points per
+correct answer, no time bonus**, at most one counted answer per player per question.
+
 #### `START_QUIZ` (Client -> Server)
-Must be issued by the room host. Rejected with `FORBIDDEN` if issued by non-host.
+Must be issued by the room host (anyone may in the quick-play `room-default`). Rejected with `FORBIDDEN`
+otherwise. Starts a **fresh** quiz: new scoreboard, every player currently in the room is registered, and
+question 1 is opened and broadcast.
 ```json
-{"type":"START_QUIZ","requestId":"req-5","payload":{"roomId":"QB42KD"}}
+{"type":"START_QUIZ","requestId":"req-5","payload":{"roomId":"QB42KD","category":"Java"}}
+```
+
+#### `NEXT_QUESTION` (Client -> Server, host only)
+One host "step". If `questionId` is still open, the server **closes** it and broadcasts `QUESTION_CLOSED`
+and `LEADERBOARD`. If it is already closed (by an earlier press or a future Member 3 timer), the server
+**advances** and broadcasts the next `QUESTION`. Closing the last question also broadcasts `QUIZ_FINISHED`.
+A repeated press for an old question gets `ERROR` `STALE_QUESTION` and never skips a question.
+```json
+{"type":"NEXT_QUESTION","requestId":"req-7","payload":{"roomId":"QB42KD","questionId":"java-101"}}
 ```
 
 #### `QUESTION` (Server -> Client Broadcast)
-Sent to all room participants when a question begins. Correct answer index is masked.
+Sent to all room participants when a question opens. Correct answer index is masked; `pointValue` is the
+fixed 10 points actually awarded.
 ```json
 {
   "type":"QUESTION",
@@ -137,37 +152,52 @@ Sent to all room participants when a question begins. Correct answer index is ma
     "text":"What is the primary difference between TCP and UDP?",
     "options":["TCP is connection-oriented; UDP is connectionless","UDP guarantees ordering","TCP is layer 1","UDP requires handshake"],
     "timeLimitSeconds":20,
-    "pointValue":100
+    "pointValue":10
   }
 }
 ```
 
 #### `ANSWER` (Client -> Server)
-Participant submits selected multiple-choice index.
+Participant submits selected multiple-choice index. The room and player always come from the server-side
+session. An optional `roomId` that differs from the session's room is rejected as `WRONG_ROOM`.
 ```json
-{
-  "type":"ANSWER",
-  "requestId":"req-6",
-  "payload":{
-    "questionId":"q-101",
-    "selectedOptionIndex":0
-  }
-}
+{"type":"ANSWER","requestId":"req-6","payload":{"questionId":"q-101","selectedOptionIndex":0}}
 ```
 
 #### `ANSWER_RESULT` (Server -> Client)
-Direct feedback to the answering participant.
+Direct verdict to the answering participant. `reason` is present only when `accepted` is false:
+`DUPLICATE` (already answered), `LATE` (question closed / not current / quiz over), `WRONG_ROOM`
+(not a participant of this room's quiz), `NO_ACTIVE_QUIZ`.
 ```json
-{
-  "type":"ANSWER_RESULT",
-  "requestId":"req-6",
-  "payload":{
-    "questionId":"q-101",
-    "correct":true,
-    "pointsAwarded":100,
-    "currentTotalScore":100
-  }
-}
+{"type":"ANSWER_RESULT","requestId":"req-6",
+ "payload":{"questionId":"q-101","accepted":true,"correct":true,"pointsAwarded":10,"currentTotalScore":10}}
+{"type":"ANSWER_RESULT","requestId":"req-8",
+ "payload":{"questionId":"q-101","accepted":false,"reason":"DUPLICATE","correct":false,"pointsAwarded":0,"currentTotalScore":10}}
+```
+
+#### `QUESTION_CLOSED` (Server -> Client Broadcast)
+The question no longer accepts answers; reveals the correct option.
+```json
+{"type":"QUESTION_CLOSED","payload":{"roomId":"QB42KD","questionId":"java-101","correctOptionIndex":1,
+ "questionNumber":1,"totalQuestions":5,"lastQuestion":false}}
+```
+
+#### `LEADERBOARD` (Server -> Client Broadcast)
+Consistent snapshot after each close. Order: score descending, then username ascending (case-insensitive),
+then playerId. Equal scores share a rank (1, 1, 3). Disconnected players keep their score with
+`connected:false`.
+```json
+{"type":"LEADERBOARD","payload":{"roomId":"QB42KD","questionsClosed":1,"totalQuestions":5,"lastQuestion":false,
+ "entries":[{"rank":1,"playerId":"usr-1a2b3c4d","username":"Alice","score":10,"correctCount":1,"connected":true},
+            {"rank":2,"playerId":"usr-9f8e7d6c","username":"Bob","score":0,"correctCount":0,"connected":false}]}}
+```
+
+#### `QUIZ_FINISHED` (Server -> Client Broadcast)
+After the last question closes. `winners` lists every rank-1 player with a positive score (several on a
+tie, empty if nobody scored).
+```json
+{"type":"QUIZ_FINISHED","payload":{"roomId":"QB42KD","totalQuestions":5,"winners":["Alice"],
+ "finalStandings":[ ...same entry shape as LEADERBOARD... ],"finishedAt":1764000000000}}
 ```
 
 ---
