@@ -1,91 +1,66 @@
-# Handover Guide: Ready for Member 3 (Multi-threading, Timed Engine & Synchronization)
+# Handover — after PR 05 (Member 5: score synchronization and results UI)
 
-Welcome Member 3! Member 2 has implemented the **Java NIO Non-Blocking Server**, **Multiplayer Room Management**, and the complete **JavaFX Host/Lobby UI Suite**. The project builds cleanly with 30 passing automated tests.
-
----
-
-## 🎯 Member 3 Assignment Scope
-
-Member 3's primary responsibilities:
-1. **Multithreading & Timed Engine**:
-   - Utilize `ExecutorService` and `ScheduledExecutorService` for synchronized countdown timers (e.g. 15-second per-question countdowns).
-   - Implement automated question timeouts and auto-advance mechanisms.
-2. **Category Selection & Match Orchestration**:
-   - Allow host to select trivia categories and round lengths.
-3. **Atomic Scoring & Synchronized Leaderboard Broadcasts**:
-   - Thread-safe score calculation (e.g. speed-based bonus scoring using atomic accumulators).
-   - Synchronized snapshot generation and broadcast of `LEADERBOARD` and `QUIZ_FINISHED` message envelopes.
+State of `main` once PR 05 is merged: PRs 00–05 are in. Build and tests: `mvn -B clean test` → 131 tests,
+0 failures.
 
 ---
 
-## 🧩 Clean Extension Points Provided by Member 2
+## What PR 05 added
 
-Member 2 established thread-safe extension contracts specifically so Member 3's background threads never write unsafely to network channels:
-
-### 1. Thread-Safe Broadcast to Room
-```java
-// Available in DefaultServerMessageDispatcher:
-dispatcher.broadcastToRoom(roomId, message);
-```
-- Completely thread-safe.
-- Respects room isolation: delivers strictly to connected participants of that specific `roomId`.
-
-### 2. Thread-Safe Send to Specific Client
-```java
-// Available on any ClientSession:
-session.send(message);
-```
-- Internally enqueues the `ByteBuffer` into the session's bounded write queue and invokes `selector.wakeup()`.
-- Thread-safe: can be called safely from timer threads or worker pools.
-
-### 3. Asynchronous Server Task Queue
-```java
-// Available on NioQuizServer:
-server.submitTask(() -> {
-    // Executes inside the NIO selector loop
-});
-```
-- Safe mechanism to execute channel modifications without race conditions.
-
-### 4. Authoritative Room Membership & Host Checks
-```java
-QuizRoomService roomService = dispatcher.getRoomService();
-Optional<Room> roomOpt = roomService.findRoomById(roomId);
-if (roomOpt.isPresent()) {
-    Room room = roomOpt.get();
-    String hostId = room.getHostPlayerId();
-    List<Player> players = room.getPlayers();
-    boolean isHost = hostId.equals(session.getPlayerId());
-}
-```
+| Area | Class | Notes |
+|---|---|---|
+| Score authority | `server/sync/ScoreManager` | The only place scores are stored. One `synchronized` lock per room around check-and-add. Fixed 10 points per correct answer. Rejects `DUPLICATE`, `LATE`, `WRONG_ROOM`, `NO_ACTIVE_QUIZ`. Consistent snapshots, tie order score desc → username asc. |
+| Game service | `server/game/DefaultQuizGameService` | Delegates all scoring to `ScoreManager` (its old provisional score map is gone). Finite quiz per room (no more wrap-around), plus `closeCurrentQuestion()` / `advanceAfter()` so a question is never skipped or advanced twice. |
+| Dispatcher | `server/DefaultServerMessageDispatcher` | New `NEXT_QUESTION` (host only). Sends `ANSWER_RESULT` with `accepted`/`reason`, broadcasts `QUESTION_CLOSED`, `LEADERBOARD` and `QUIZ_FINISHED`. Disconnect and leave mark the player disconnected without losing their score. |
+| Live demo | `server/sync/RaceConditionDemo` | Unsafe vs safe, 50 latch-released threads by default. |
+| JavaFX | `LeaderboardView`, `FinalResultsView`, `PersonalSummaryView` | Same CSS and `NavigationContainer`. Network callbacks already arrive on the FX thread through `UiCallbackDispatcher` (`Platform.runLater`). |
+| Removed | `server/sync/LeaderboardSyncStub` | Replaced by `ScoreManager`, so there's only one scoring source. |
+| Protocol | `MessageType.NEXT_QUESTION` | Documented in `PROTOCOL.md` §4.3 together with the changed `ANSWER_RESULT`. |
 
 ---
 
-## 🚀 5-Step Handover Workflow for Member 3
+## Member 3 features still missing on `main` (honest list)
 
-### Step 1: Branch Off `main` (After PR 02 is Merged)
-```bash
-git fetch origin
-git checkout -b feature/03-sync-scoring-timer origin/main
-mvn clean test
+Member 3's category work is merged: `QuizCategoryView`, the category in `START_QUIZ`, and
+`java_questions.json` / `networking_questions.json`. Still **not** implemented:
+
+1. **Question deadlines.** No `ScheduledExecutorService` and no per-question countdown. `timeLimitSeconds` is sent to clients but nothing enforces it.
+2. **Automatic close at the deadline.** Today questions close only when the host presses **End Question**.
+3. **Automatic advance.** The host presses **Next Question** on the leaderboard.
+4. **Live quiz / countdown screen.** The question screen is still Member 1's `PlayerHomeView`, with no countdown display.
+
+PR 05 did **not** build these, because they are Member 3's evaluated concept.
+
+### How Member 3 plugs the timer in (one call)
+
+```java
+// When the deadline for questionId in roomId fires (on the scheduler thread):
+dispatcher.closeQuestionAndBroadcast(roomId, questionId);
+// -> closes it in ScoreManager (late answers become LATE),
+//    broadcasts QUESTION_CLOSED + LEADERBOARD, and QUIZ_FINISHED after the last question.
+// It is thread-safe and idempotent: if the host already closed it, it returns false and does nothing.
+
+// For auto-advance after a pause, the timer calls the same path the host uses:
+gameService.advanceAfter(roomId, questionId);   // advances at most once per question
 ```
-Verify that all 30 tests pass.
 
-### Step 2: Implement Timed Quiz Engine in `server/game/`
-- Introduce `ScheduledExecutorService` for 1-second countdown ticks.
-- Broadcast periodic countdown warnings or tick events to the room.
-- When timer expires, trigger `QUESTION_CLOSED` revealing the correct answer.
+Look for the comment `Member 3 timer will call closeQuestion() here` in `DefaultServerMessageDispatcher`
+and `DefaultQuizGameService`. Schedule the deadline when a `QUESTION` is broadcast (in `handleStartQuiz` and
+in `handleNextQuestion` after `advanceAfter`), and cancel the `ScheduledFuture` on early close.
 
-### Step 3: Implement Atomic Scoring & Leaderboard Snapshots in `server/sync/`
-- Implement atomic score aggregation.
-- Generate `LEADERBOARD` broadcast payloads after each question.
+---
 
-### Step 4: Hook Start Quiz into Timed Loop
-In `DefaultServerMessageDispatcher.handleStartQuiz()`:
-- Hand off match start to Member 3's timed quiz engine.
+## Day 4 notes for every member
 
-### Step 5: Verify End-to-End Operation
-```bash
-mvn compile exec:java -Dexec.mainClass="com.quizbattle.app.QuizBattleServerApp"
-mvn javafx:run
-```
+- **Member 1:** `PlayerHomeView.displayAnswerResult` now takes `(accepted, reason, correct, points, total)`. The old "Next Question" button became the host-only **End Question ➔ Leaderboard**, which sends `NEXT_QUESTION` instead of `START_QUIZ`. Re-sending `START_QUIZ` used to reset the room.
+- **Member 2:** nothing changed in NIO or rooms. The dispatcher still calls `broadcastToRoom`. Disconnects also call `gameService.markDisconnected`.
+- **Member 3:** see above. Please don't add a second score store; call `ScoreManager` through the game service.
+- **Member 4:** discovery is untouched. Run the discovery step of the demo on a second machine if one is available.
+- **Everyone:** the evaluation script is `docs/DEMO.md` §1 (2 minutes each, class names listed).
+
+## Known risks
+
+- Starting a new quiz in a room (`START_QUIZ` or **Play Again**) clears that room's scores by design.
+- In quick play (`room-default`) any player may advance, and a new joiner after a finished quiz restarts it.
+- Clients that disconnect and reconnect get a new `playerId` (it is derived from the session id), so they appear as a new player. The old entry stays, marked disconnected.
+- One JavaFX GUI pass with five windows still needs to be done by hand before the evaluation. The automated five-client test covers the same protocol flow without the GUI.

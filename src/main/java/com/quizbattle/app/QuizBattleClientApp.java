@@ -5,9 +5,12 @@ import com.quizbattle.client.net.ClientConnectionState;
 import com.quizbattle.client.net.NetworkClient;
 import com.quizbattle.client.net.SocketNetworkClient;
 import com.quizbattle.client.ui.CreateRoomView;
+import com.quizbattle.client.ui.FinalResultsView;
 import com.quizbattle.client.ui.HostDashboardView;
 import com.quizbattle.client.ui.JoinRoomView;
 import com.quizbattle.client.ui.LanDiscoveryView;
+import com.quizbattle.client.ui.LeaderboardView;
+import com.quizbattle.client.ui.PersonalSummaryView;
 import com.quizbattle.client.ui.ManualConnectView;
 import com.quizbattle.client.ui.MultiplayerLobbyView;
 import com.quizbattle.client.ui.NavigationContainer;
@@ -26,6 +29,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.net.URL;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ForkJoinPool;
@@ -57,6 +61,13 @@ public class QuizBattleClientApp extends Application {
     private JoinRoomView joinRoomView;
     private MultiplayerLobbyView multiplayerLobbyView;
     private PlayerHomeView playerHomeView;
+
+    // Member 5: results state (display only; the server owns every score)
+    private String currentHostPlayerId;
+    private JsonNode lastQuizFinished;
+    private FinalResultsView finalResultsView;
+    private boolean quizOver = false;
+    private final Map<String, String> answerHistory = new LinkedHashMap<>();
 
     @Override
     public void start(Stage primaryStage) {
@@ -214,6 +225,12 @@ public class QuizBattleClientApp extends Application {
         networkClient.registerListener(MessageType.ROOM_STATE, message -> {
             JsonNode payload = message.getPayload();
             log.debug("Received ROOM_STATE broadcast: {}", payload);
+            if (payload != null && payload.has("hostPlayerId")) {
+                currentHostPlayerId = payload.get("hostPlayerId").asText();
+                if (playerHomeView != null) {
+                    playerHomeView.setCanAdvance(canAdvanceQuiz());
+                }
+            }
             if (multiplayerLobbyView != null && payload != null) {
                 multiplayerLobbyView.updateRoomState(payload);
             }
@@ -223,7 +240,10 @@ public class QuizBattleClientApp extends Application {
         networkClient.registerListener(MessageType.ROOM_LEFT, message -> {
             log.info("Left room, returning to dashboard.");
             currentRoomCode = null;
+            currentHostPlayerId = null;
             multiplayerLobbyView = null;
+            playerHomeView = null;
+            resetResultsState();
             showHostDashboardScreen();
         });
 
@@ -233,6 +253,10 @@ public class QuizBattleClientApp extends Application {
                 Question question = message.getPayloadAs(Question.class);
                 if (question != null) {
                     log.info("Received active question: id='{}', text='{}'", question.getQuestionId(), question.getText());
+                    if (quizOver) {
+                        resetResultsState(); // a new quiz started in this room
+                    }
+                    answerHistory.putIfAbsent(question.getQuestionId(), "— no answer");
                     showQuestionInPlayerHome(question);
                 }
             } catch (Exception e) {
@@ -244,12 +268,47 @@ public class QuizBattleClientApp extends Application {
         networkClient.registerListener(MessageType.ANSWER_RESULT, message -> {
             JsonNode payload = message.getPayload();
             if (payload != null && playerHomeView != null) {
+                boolean accepted = payload.path("accepted").asBoolean(true);
+                String reason = payload.path("reason").asText(null);
                 boolean correct = payload.path("correct").asBoolean(false);
                 int points = payload.path("pointsAwarded").asInt(0);
                 int totalScore = payload.path("currentTotalScore").asInt(0);
-                log.info("Answer result: correct={}, points={}, totalScore={}", correct, points, totalScore);
-                playerHomeView.displayAnswerResult(correct, points, totalScore);
+                log.info("Answer result: accepted={}, reason={}, correct={}, points={}, totalScore={}",
+                        accepted, reason, correct, points, totalScore);
+                if (accepted) {
+                    answerHistory.put(payload.path("questionId").asText(),
+                            correct ? "✓ correct (+" + points + ")" : "✗ wrong");
+                }
+                playerHomeView.displayAnswerResult(accepted, reason, correct, points, totalScore);
             }
+        });
+
+        // Member 5: QUESTION_CLOSED -> lock options and reveal answer
+        networkClient.registerListener(MessageType.QUESTION_CLOSED, message -> {
+            JsonNode payload = message.getPayload();
+            if (payload != null && playerHomeView != null) {
+                playerHomeView.onQuestionClosed(payload.path("questionId").asText(),
+                        payload.path("correctOptionIndex").asInt(-1));
+            }
+        });
+
+        // Member 5: LEADERBOARD -> live leaderboard screen (skipped after the last question,
+        // because QUIZ_FINISHED follows immediately)
+        networkClient.registerListener(MessageType.LEADERBOARD, message -> {
+            JsonNode payload = message.getPayload();
+            if (payload == null || payload.path("lastQuestion").asBoolean(false)) {
+                return;
+            }
+            LeaderboardView view = new LeaderboardView(currentPlayerId, canAdvanceQuiz(), this::requestNextQuestion);
+            view.update(payload);
+            rootContainer.navigateTo(view);
+        });
+
+        // Member 5: QUIZ_FINISHED -> final results
+        networkClient.registerListener(MessageType.QUIZ_FINISHED, message -> {
+            lastQuizFinished = message.getPayload();
+            quizOver = true;
+            showFinalResultsScreen();
         });
 
         // 9. ERROR event
@@ -365,8 +424,50 @@ public class QuizBattleClientApp extends Application {
         }
         playerHomeView.onRoomJoined(currentRoomCode != null ? currentRoomCode : "room-default",
                 currentRoomName != null ? currentRoomName : "General Trivia Arena");
+        playerHomeView.setCanAdvance(canAdvanceQuiz());
         playerHomeView.displayQuestion(question, this::submitAnswer);
         rootContainer.navigateTo(playerHomeView);
+    }
+
+    /** Room host, or anyone in the quick-play default room, may close/advance questions. */
+    private boolean canAdvanceQuiz() {
+        if (currentRoomCode == null || "room-default".equalsIgnoreCase(currentRoomCode)) {
+            return true;
+        }
+        return currentPlayerId != null && currentPlayerId.equals(currentHostPlayerId);
+    }
+
+    private void resetResultsState() {
+        answerHistory.clear();
+        lastQuizFinished = null;
+        finalResultsView = null;
+        quizOver = false;
+    }
+
+    /** Member 5: Final Results screen. */
+    private void showFinalResultsScreen() {
+        finalResultsView = new FinalResultsView(
+                currentPlayerId,
+                lastQuizFinished,
+                canAdvanceQuiz(),
+                this::showPersonalSummaryScreen,
+                this::showQuizCategoryScreen,
+                this::leaveCurrentRoom
+        );
+        rootContainer.navigateTo(finalResultsView);
+    }
+
+    /** Member 5: Personal Summary screen. */
+    private void showPersonalSummaryScreen() {
+        PersonalSummaryView view = new PersonalSummaryView(
+                currentUsername,
+                currentPlayerId,
+                lastQuizFinished,
+                new LinkedHashMap<>(answerHistory),
+                () -> rootContainer.navigateTo(finalResultsView),
+                this::leaveCurrentRoom
+        );
+        rootContainer.navigateTo(view);
     }
 
     private void startQuickPlay() {
@@ -440,12 +541,19 @@ public class QuizBattleClientApp extends Application {
         )));
     }
 
+    /**
+     * Host "next" action. The server decides what it means: close the open question
+     * (QUESTION_CLOSED + LEADERBOARD) or advance to the next one.
+     */
     private void requestNextQuestion() {
-        log.info("Requesting next trivia question...");
         String reqId = UUID.randomUUID().toString();
-        networkClient.send(Message.request(MessageType.START_QUIZ, reqId, Map.of(
-                "roomId", currentRoomCode != null ? currentRoomCode : "room-default"
-        )));
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("roomId", currentRoomCode != null ? currentRoomCode : "room-default");
+        if (playerHomeView != null && playerHomeView.getCurrentQuestion() != null) {
+            payload.put("questionId", playerHomeView.getCurrentQuestion().getQuestionId());
+        }
+        log.info("Requesting NEXT_QUESTION: {}", payload);
+        networkClient.send(Message.request(MessageType.NEXT_QUESTION, reqId, payload));
     }
 
     private void disconnectAndReturn() {

@@ -1,133 +1,89 @@
-# QuizBattle 2.0 Demonstration Runbook (Member 2: Java NIO + Multiplayer Rooms + UI)
+# QuizBattle 2.0 — Final Evaluation Runbook
 
-This guide documents the end-to-end operation, verification, and automated demonstration of the Java NIO non-blocking server and multiplayer room system.
+This is the runbook for the physical evaluation: build checks, the 10-minute script (about 2 minutes per
+member, each naming the Java class they explain), and the five-client scored quiz walkthrough.
 
----
-
-## 1. Automated Test Suite Verification
-
-Run the full automated test suite (including unit tests, protocol framing, stream fragmentation, 18 Member 2 NIO integration tests, and the 5-client demonstration):
-
-```powershell
-mvn clean test
-```
-
-### Verified Test Suites:
-1. **`NioMultiplayerIntegrationTest`** (17 tests):
-   - **NIO Server Startup**: Dynamic port binding and selector initialization.
-   - **5 Simultaneous Clients**: Multi-client non-blocking connect and handshake.
-   - **Host Room Creation**: Server-authoritative 6-character room codes (`QB42KD`).
-   - **Unique Room Codes**: Collision-free generation.
-   - **Multiple Players Joining**: Synchronized lobby joins.
-   - **Live `ROOM_STATE` Broadcasts**: Real-time roster distribution.
-   - **Unknown Room Code Rejection**: `ROOM_NOT_FOUND` error handling.
-   - **Two-Room Isolation**: Cross-room message blocking.
-   - **Fragmented JSON Reassembly**: TCP chunk streaming.
-   - **Multiple Messages in One Read**: Concatenated packet handling with order preservation.
-   - **Partial TCP Writes**: Outbound buffer resumption.
-   - **Bounded Outbound Queues**: Slow client backpressure.
-   - **Unexpected Disconnect**: SelectionKey and channel cleanup.
-   - **Room Cleanup**: Deletion of empty ephemeral rooms.
-   - **Host Disconnect & Migration**: Automatic promotion of remaining players.
-   - **Selector Idle Behavior**: Zero busy-spinning verification.
-   - **Quiz Question/Answer Regression**: Full quiz round execution over NIO.
-2. **`FiveClientDemonstrationTest`** (1 test):
-   - Full 13-step automated multiplayer demonstration.
-3. **`TcpQuizIntegrationTest`** (2 tests):
-   - Member 1 TCP client and unauthorized answer rejection.
-4. **`ModelSmokeTest`** (3 tests):
-   - Domain models, masking, and immutability.
-5. **`MessageCodecTest`** (7 tests):
-   - Framing, 64 KiB limits, and JSON decoding.
-
-**Total**: 30 tests, 0 failures, 0 errors, 0 skipped.
+All commands run from the project root. On Windows PowerShell keep the quotes around `-D...` arguments.
 
 ---
 
-## 2. Launching the Default Java NIO Server
-
-In Terminal 1:
+## 0. Before the evaluators arrive (not timed)
 
 ```powershell
-mvn compile exec:java -Dexec.mainClass="com.quizbattle.app.QuizBattleServerApp"
+java -version            # 21 or newer
+mvn -version             # 3.9+
+mvn -B clean test        # expect: Tests run: 131, Failures: 0, Errors: 0, Skipped: 0
 ```
 
-### Expected Startup Output:
-```
-====================================================
-Starting QuizBattle 2.0 Server (Member 2 Java NIO Non-Blocking Engine)
-TCP Port: 5000 | UDP Discovery Port: 5001
-Max Message Framing Cap: 65536 bytes (64 KiB)
-Transport: Java NIO Selector [Default: Java NIO Non-Blocking]
-====================================================
-Initializing Java NIO Selector and ServerSocketChannel on port 5000...
-NioQuizServer successfully listening on TCP port 5000 [Selector multiplexing active]
-Java NIO Selector event loop started on port 5000
-```
+Open these terminals in advance:
+
+| Terminal | Command |
+|---|---|
+| T1 server | `mvn compile exec:java "-Dexec.mainClass=com.quizbattle.app.QuizBattleServerApp"` |
+| T2–T6 clients | `mvn javafx:run` (one per player: Alice, Bob, Charlie, Diana, Evan) |
+| T7 demo | `mvn -q compile exec:java "-Dexec.mainClass=com.quizbattle.server.sync.RaceConditionDemo"` |
+
+If port 5000 is busy, stop the old server first (`Address already in use: bind` means one is still running).
 
 ---
 
-## 3. Five-Client Live Demonstration Walkthrough
+## 1. Ten-minute script
 
-Open 5 separate terminal tabs or PowerShell windows to launch 5 client instances:
+| Time | Member | Shows | Class to explain |
+|---|---|---|---|
+| 0:00–2:00 | **Member 1** — TCP client/server and protocol | Start T1. Open one client and connect. Point at the newline-delimited JSON `CONNECT`/`CONNECTED` in the log. Mention the blocking reference server: `-Dquizbattle.server.transport=blocking`. | `com.quizbattle.server.blocking.BlockingQuizServer`, `com.quizbattle.client.net.SocketNetworkClient`, `com.quizbattle.protocol.StreamFrameAccumulator` |
+| 2:00–4:00 | **Member 2** — Java NIO and rooms | Alice creates a room (code like `QB42KD`). Bob, Charlie, Diana and Evan join by code. The lobby roster updates live on all five clients. | `com.quizbattle.server.nio.NioQuizServer` (single `Selector` loop), `com.quizbattle.server.concurrent.ConcurrentRoomManager` (per-room `ReentrantLock`, host migration) |
+| 4:00–6:00 | **Member 3** — quiz categories and question flow | Alice clicks Start Quiz, picks **Java** in the category screen, and the first question reaches every client. *(The timer engine is not merged yet: see `HANDOVER.md`.)* | `com.quizbattle.client.ui.QuizCategoryView`, `com.quizbattle.server.game.DefaultQuizGameService` (category banks, per-room question pointer) |
+| 6:00–8:00 | **Member 4** — UDP LAN discovery | On a client, open the LAN discovery screen. The server on UDP 5001 answers the broadcast and Connect fills in host and port. | `com.quizbattle.discovery.UdpDiscoveryResponder`, `com.quizbattle.discovery.UdpDiscoveryClient`, `com.quizbattle.client.ui.LanDiscoveryView` |
+| 8:00–10:00 | **Member 5** — synchronized scoring and results | Play the quiz to the end (section 2). Then run T7: the UNSAFE column shows double-scoring and lost updates, the SAFE column always shows `accepted=1 score=10`. | `com.quizbattle.server.sync.ScoreManager` (one `synchronized` room lock around check-and-add), `com.quizbattle.server.sync.RaceConditionDemo`, `com.quizbattle.client.ui.LeaderboardView` / `FinalResultsView` / `PersonalSummaryView` |
+
+Member 4 can run discovery while Member 1 is talking if time is short; both only need one client.
+
+### Member 5 talking points (≈60 seconds)
+
+1. **One authority.** Every score lives in `ScoreManager`. `DefaultQuizGameService` only checks whether an answer is right and passes that on. The client only displays what the server sends.
+2. **Why a lock and not only `ConcurrentHashMap`.** "Has this player answered? → record it → add 10" is three steps. A ConcurrentHashMap makes each step atomic, but not the sequence. `submitAnswer` runs all three inside `synchronized (board.lock)`, one lock per room, so rooms never wait for each other.
+3. **Closing is part of the same discipline.** `closeQuestion` takes the same lock, so an answer racing the close is either counted in full or rejected as `LATE`. `closeQuestion` is idempotent, so a host press and a future timer can't both close the same question.
+4. **Proof.** `ScoreManagerTest` starts 64 workers behind a `CountDownLatch` and asserts exactly one accepted answer, 20 times over. It also covers 5 players × 20 threads × 3 questions and answers racing a close. No sleeps.
+
+---
+
+## 2. Five-client scored quiz walkthrough
+
+1. **Connect:** five clients named `Alice`, `Bob`, `Charlie`, `Diana`, `Evan` connect to `127.0.0.1:5000` (or through LAN discovery).
+2. **Room:** Alice clicks **Create Multiplayer Room** and then **Enter Multiplayer Lobby**. The others click **Join Room by Code** and enter the code. The roster shows `Players: 5`.
+3. **Start:** Alice clicks **Start Quiz**, chooses **Java**, and starts. Every client shows question 1 with `Points: 10`.
+4. **Answer:** each player clicks an option and gets an immediate server verdict:
+   - `✓ Correct! +10 points. Total Score: 10 pts`, or `✗ Incorrect choice`.
+   - The options lock after one click. Even a hand-crafted second answer comes back as `Answer not counted: you already answered this question` (`DUPLICATE`).
+5. **Close:** only Alice sees **End Question ➔ Leaderboard**. Clicking it reveals the correct option in green on every client, then switches everyone to the **Live Leaderboard**: rank, medal, username, correct count, score, with your own row highlighted. Ties share a rank, ordered by username.
+6. **Late answer:** a player who hadn't answered sees `⌛ Question closed before you answered.` Any answer now is rejected as `LATE`.
+7. **Disconnect:** close Diana's window after question 2. Her row stays on the next leaderboard with her points and a red `DISCONNECTED` badge.
+8. **Next:** Alice clicks **Next Question ➔** on the leaderboard. Repeat for all 5 questions.
+9. **Finish:** closing question 5 sends everyone to **Final Results**: winner banner (or tie banner), your rank/score/correct count, and the full standings.
+10. **Personal Summary:** click **My Summary** to see rank, score, correct/total, accuracy and a question-by-question list. **Leave Room** returns to the dashboard. Alice also has **Play Again**.
+
+Quick play still works: **Quick Play** on the dashboard joins `room-default`, where any player may end or advance questions.
+
+---
+
+## 3. Automated evidence
 
 ```powershell
-mvn compile exec:java -Dexec.mainClass="com.quizbattle.client.ClientLauncher"
+mvn -B clean test
 ```
 
-### Detailed Scenario Walkthrough:
+| Suite | Tests | What it proves |
+|---|---|---|
+| `ScoreManagerTest` | 81 (incl. repeated runs) | 10-point rule, DUPLICATE, LATE, WRONG_ROOM, NO_ACTIVE_QUIZ, tie order and ranks, disconnected keeps score; **64-thread latch race → exactly 1 accepted** (×20), multi-player totals (×10), answers vs close (×20), concurrent close idempotent (×20) |
+| `RaceConditionDemoTest` | 10 | Demo's safe path with 100 workers always gives 1 accepted, score 10 |
+| `QuizProgressionTest` | 3 | Close-then-advance moves exactly once, stale advance ignored, quiz finishes, scoring delegated |
+| `FiveClientScoredQuizTest` | 1 | Full 5-client, 5-question quiz over NIO: FORBIDDEN for non-host next, DUPLICATE, WRONG_ROOM, LATE, STALE_QUESTION, disconnect keeps score, final ranking `Alice 50, Bob 30, Diana 20 (disconnected), Evan 10, Charlie 0` |
+| `NioMultiplayerIntegrationTest` | 17 | NIO startup, five clients, rooms, isolation, fragmentation, partial writes, disconnects, host migration, quiz regression, graceful shutdown |
+| `FiveClientDemonstrationTest` | 1 | Original 13-step lobby demonstration |
+| `TcpQuizIntegrationTest` | 2 | Blocking-server quiz round and unauthorized answer |
+| `UdpDiscoveryTest` | 5 | UDP discovery protocol, responder, client |
+| `ModelSmokeTest`, `MessageCodecTest` | 4 + 7 | Models, masking, framing, 64 KiB cap |
+| **Total** | **131** | |
 
-1. **Step 1: Welcome Screen (All 5 Clients)**:
-   - Client 1 inputs alias: `HostAlice`
-   - Client 2 inputs alias: `Bob`
-   - Client 3 inputs alias: `Charlie`
-   - Client 4 inputs alias: `Diana`
-   - Client 5 inputs alias: `Evan`
-   - Click **"Continue to Connect ➔"**.
-
-2. **Step 2: Server Connection (All 5 Clients)**:
-   - Accept default host `127.0.0.1` and port `5000`.
-   - Click **"Connect to Quiz Server"**.
-   - Socket connects, performs `CONNECT` handshake, receives `CONNECTED` with unique `playerId` (e.g. `usr-1a2b3c4d`).
-   - All 5 clients land smoothly on the **Host Dashboard** (Screen 1).
-
-3. **Step 3: Host Creates Room**:
-   - `HostAlice` clicks **"🎮 Create Multiplayer Room"**.
-   - Server validates session, generates unique 6-character room code (e.g. `QB42KD`), and sends `ROOM_CREATED`.
-   - Screen 2 (**Create Room Confirmation**) appears showing the code `QB42KD` in large font.
-   - Click **"📋 Copy Room Code"** (clipboard confirms `✓ Room code QB42KD copied!`).
-   - Click **"Enter Multiplayer Lobby ➔"**.
-
-4. **Step 4: Multiplayer Lobby (Screen 4)**:
-   - `HostAlice` sees:
-     - `ROOM CODE: QB42KD`
-     - `👑 Host: HostAlice`
-     - `Players: 1`
-     - Player row: `👑 HostAlice (usr-...) [HOST]`
-     - Active button: `🚀 Start Quiz (Host)`
-
-5. **Step 5: Remaining 4 Players Join**:
-   - `Bob`, `Charlie`, `Diana`, and `Evan` click **"🚪 Join Room by Code"** on their Dashboards (Screen 3).
-   - Enter `QB42KD`.
-   - Click **"Join Room ➔"**.
-   - Each client receives `ROOM_JOINED` and enters the Lobby (Screen 4).
-   - Non-host button displays: `⏳ Waiting for Host...` (disabled).
-
-6. **Step 6: Live Roster Synchronization**:
-   - All 5 clients display identical real-time rosters:
-     - `Players: 5`
-     - 1 Host (`HostAlice`) + 4 Players (`Bob`, `Charlie`, `Diana`, `Evan`).
-
-7. **Step 7: Player Disconnect & Real-time Update**:
-   - Close `Evan`'s window.
-   - Within milliseconds, all remaining 4 clients update to `Players: 4` without server restart or crash.
-
-8. **Step 8: Room Isolation Test**:
-   - Launch a 6th client, create Room B (e.g. `QB99ZZ`).
-   - Room B is completely isolated from Room A.
-
-9. **Step 9: Launch Synchronized Quiz**:
-   - `HostAlice` clicks **"🚀 Start Quiz (Host)"**.
-   - Server delivers active `QUESTION` to all Room A participants.
-   - All 4 clients transition to the trivia arena, showing the question and 4 multiple-choice options (A, B, C, D).
-   - Select option A: instant feedback banner (`✓ Correct! +100 points`).
+Race demo with custom size: `mvn -q compile exec:java "-Dexec.mainClass=com.quizbattle.server.sync.RaceConditionDemo" "-Dexec.args=100 10"` (threads, rounds).
