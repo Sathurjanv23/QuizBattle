@@ -7,6 +7,7 @@ import com.quizbattle.client.net.SocketNetworkClient;
 import com.quizbattle.client.ui.CreateRoomView;
 import com.quizbattle.client.ui.HostDashboardView;
 import com.quizbattle.client.ui.JoinRoomView;
+import com.quizbattle.client.ui.LanDiscoveryView;
 import com.quizbattle.client.ui.ManualConnectView;
 import com.quizbattle.client.ui.MultiplayerLobbyView;
 import com.quizbattle.client.ui.NavigationContainer;
@@ -15,6 +16,7 @@ import com.quizbattle.client.ui.PlayerHomeView;
 import com.quizbattle.client.ui.UiCallbackDispatcher;
 import com.quizbattle.client.ui.WelcomeView;
 import com.quizbattle.model.Question;
+import com.quizbattle.discovery.UdpDiscoveryClient;
 import com.quizbattle.protocol.Message;
 import com.quizbattle.protocol.MessageType;
 import javafx.application.Application;
@@ -40,12 +42,15 @@ public class QuizBattleClientApp extends Application {
     private NavigationContainer rootContainer;
     private NetworkClient networkClient;
 
+        private final UdpDiscoveryClient discoveryClient = new UdpDiscoveryClient(AppConfig.getDiscoveryPort());
+
     private String currentUsername;
     private String currentPlayerId;
     private String currentHostPort;
     private String currentRoomCode;
     private String currentRoomName;
 
+    private LanDiscoveryView lanDiscoveryView;
     private ManualConnectView manualConnectView;
     private HostDashboardView hostDashboardView;
     private CreateRoomView createRoomView;
@@ -87,10 +92,25 @@ public class QuizBattleClientApp extends Application {
     private void showWelcomeScreen() {
         WelcomeView welcomeView = new WelcomeView(username -> {
             this.currentUsername = username;
-            showManualConnectScreen();
+            showLanDiscoveryScreen();
         });
         rootContainer.navigateTo(welcomeView);
         rootContainer.setConnectionStatus("Offline", "#94a3b8");
+    }
+
+    /**
+    Member 4: LAN discovery screen. Finds servers with a UDP broadcast, then connects over TCP.
+     */
+    private void showLanDiscoveryScreen() {
+        lanDiscoveryView = new LanDiscoveryView(
+                currentUsername,
+                discoveryClient,
+                this::initiateConnection,       // Connect  -> Member 1's TCP connect
+                this::showManualConnectScreen,  // Enter IP Manually -> fallback screen
+                this::showWelcomeScreen         // Back
+        );
+        rootContainer.navigateTo(lanDiscoveryView);
+        rootContainer.setConnectionStatus("Disconnected", "#f59e0b");
     }
 
     private void showManualConnectScreen() {
@@ -122,6 +142,8 @@ public class QuizBattleClientApp extends Application {
                     rootContainer.setConnectionStatus("Connection Failed", "#ef4444");
                     if (manualConnectView != null) {
                         manualConnectView.showError(e.getClass().getSimpleName() + ": " + e.getMessage());
+                    }if (lanDiscoveryView != null) {
+                        lanDiscoveryView.showError("TCP connection failed: " + e.getMessage());
                     }
                 });
             }
@@ -246,6 +268,8 @@ public class QuizBattleClientApp extends Application {
                 }
                 if (manualConnectView != null) {
                     manualConnectView.showError(code + ": " + msg);
+                }if (lanDiscoveryView != null) {
+                    lanDiscoveryView.showError(code + ": " + msg);
                 }
             });
         });
@@ -429,6 +453,6 @@ public class QuizBattleClientApp extends Application {
         if (networkClient != null) {
             networkClient.disconnect();
         }
-        showManualConnectScreen();
+        showLanDiscoveryScreen();
     }
 }
