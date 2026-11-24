@@ -1,11 +1,15 @@
 package com.quizbattle.app;
 
+import com.quizbattle.discovery.UdpDiscoveryResponder;
 import com.quizbattle.server.DefaultServerMessageDispatcher;
 import com.quizbattle.server.QuizServer;
 import com.quizbattle.server.blocking.BlockingQuizServer;
 import com.quizbattle.server.nio.NioQuizServer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import java.io.IOException;
+import java.net.InetAddress;
+
 
 /**
  * Server application bootstrap entry point.
@@ -36,11 +40,28 @@ public class QuizBattleServerApp {
                 ? new BlockingQuizServer(port, dispatcher)
                 : new NioQuizServer(port, dispatcher);
 
+        // UDP discovery responder (UDP 5001) runs beside the TCP server
+        UdpDiscoveryResponder discoveryResponder = new UdpDiscoveryResponder(
+                discoveryPort,
+                port,
+                resolveServerName(),
+                () -> dispatcher.getRoomService().listAvailableRooms().size(),
+                () -> dispatcher.getActiveSessions().size());
+
         try {
             server.start();
 
+            try {
+                discoveryResponder.start();
+            } catch (IOException e) {
+                // Discovery is optional: players can still connect by typing the IP
+                log.warn("UDP discovery unavailable on port {} ({}). Clients must connect manually.",
+                        discoveryPort, e.getMessage());
+            }
+
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
                 log.info("Shutdown hook triggered, stopping server...");
+                discoveryResponder.close();
                 server.stop();
             }));
 
@@ -58,6 +79,19 @@ public class QuizBattleServerApp {
         } catch (Exception e) {
             log.error("Fatal error starting QuizBattle server: {}", e.getMessage(), e);
             System.exit(1);
+        }
+    }
+    
+    /** Name shown in the clients' LAN server list. Override with -Dquizbattle.server.name=... */
+    private static String resolveServerName() {
+        String configured = System.getProperty("quizbattle.server.name");
+        if (configured != null && !configured.isBlank()) {
+            return configured.trim();
+        }
+        try {
+            return "QuizBattle @ " + InetAddress.getLocalHost().getHostName();
+        } catch (IOException e) {
+            return "QuizBattle Server";
         }
     }
 }
