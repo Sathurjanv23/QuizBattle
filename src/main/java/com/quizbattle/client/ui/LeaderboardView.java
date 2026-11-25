@@ -3,7 +3,6 @@ package com.quizbattle.client.ui;
 import com.fasterxml.jackson.databind.JsonNode;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
-import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.layout.HBox;
@@ -15,8 +14,8 @@ import javafx.scene.layout.VBox;
  * Member 5: Live Leaderboard screen, shown after each question closes.
  *
  * <p>Renders the server's authoritative LEADERBOARD snapshot (rank, username, correct count, score,
- * disconnected marker). The client never computes or changes scores. The host sees the
- * "Next Question" control; other players see a waiting hint.</p>
+ * disconnected marker). The client never computes or changes scores. Question progression is
+ * controlled by the server.</p>
  */
 public class LeaderboardView extends VBox {
 
@@ -25,7 +24,7 @@ public class LeaderboardView extends VBox {
     private final VBox rowsBox;
 
     @SuppressWarnings("this-escape")
-    public LeaderboardView(String myPlayerId, boolean canAdvance, Runnable onNextQuestion) {
+    public LeaderboardView(String myPlayerId) {
         super(14);
         this.myPlayerId = myPlayerId;
 
@@ -49,25 +48,10 @@ public class LeaderboardView extends VBox {
 
         Region header = headerRow();
 
-        VBox footer = new VBox(8);
-        footer.setAlignment(Pos.CENTER_RIGHT);
-        if (canAdvance) {
-            Button next = new Button("Next Question ➔");
-            next.getStyleClass().add("primary-button");
-            next.setOnAction(e -> {
-                next.setDisable(true);
-                if (onNextQuestion != null) {
-                    onNextQuestion.run();
-                }
-            });
-            footer.getChildren().add(next);
-        } else {
-            Label waiting = new Label("⏳ Waiting for the host to start the next question...");
-            waiting.getStyleClass().add("card-subtitle");
-            footer.getChildren().add(waiting);
-        }
+        Label progressHint = new Label("The next question starts automatically.");
+        progressHint.getStyleClass().add("card-subtitle");
 
-        getChildren().addAll(title, progressLabel, header, scroll, footer);
+        getChildren().addAll(title, progressLabel, header, scroll, progressHint);
     }
 
     /** Applies a LEADERBOARD payload. Safe to call from any thread. */

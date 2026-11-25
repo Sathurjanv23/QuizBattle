@@ -180,6 +180,7 @@ public class BlockingQuizServer implements QuizServer {
                 Thread.currentThread().interrupt();
             }
         }
+        dispatcher.close();
         log.info("BlockingQuizServer stopped.");
     }
 

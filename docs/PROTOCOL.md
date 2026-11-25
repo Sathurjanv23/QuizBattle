@@ -132,18 +132,19 @@ question 1 is opened and broadcast.
 {"type":"START_QUIZ","requestId":"req-5","payload":{"roomId":"QB42KD","category":"Java"}}
 ```
 
-#### `NEXT_QUESTION` (Client -> Server, host only)
-One host "step". If `questionId` is still open, the server **closes** it and broadcasts `QUESTION_CLOSED`
-and `LEADERBOARD`. If it is already closed (by an earlier press or a future Member 3 timer), the server
-**advances** and broadcasts the next `QUESTION`. Closing the last question also broadcasts `QUIZ_FINISHED`.
-A repeated press for an old question gets `ERROR` `STALE_QUESTION` and never skips a question.
+#### `NEXT_QUESTION` (legacy Client -> Server command)
+Clients must not advance quiz questions manually. Non-host requests are rejected as `FORBIDDEN`;
+host requests are rejected as `AUTOMATIC_PROGRESS`. The server advances when all connected players
+have answered or when the authoritative 20-second deadline expires.
 ```json
 {"type":"NEXT_QUESTION","requestId":"req-7","payload":{"roomId":"QB42KD","questionId":"java-101"}}
 ```
 
 #### `QUESTION` (Server -> Client Broadcast)
 Sent to all room participants when a question opens. Correct answer index is masked; `pointValue` is the
-fixed 10 points actually awarded.
+fixed 10 points actually awarded. `questionNumber` and `totalQuestions` show quiz progress;
+`startTimeMillis` and `deadlineMillis` are server epoch timestamps shared by every player in the room.
+The standard quiz banks contain ten questions with a 20-second limit per question.
 ```json
 {
   "type":"QUESTION",
@@ -152,10 +153,20 @@ fixed 10 points actually awarded.
     "text":"What is the primary difference between TCP and UDP?",
     "options":["TCP is connection-oriented; UDP is connectionless","UDP guarantees ordering","TCP is layer 1","UDP requires handshake"],
     "timeLimitSeconds":20,
-    "pointValue":10
+    "pointValue":10,
+    "questionNumber":1,
+    "totalQuestions":10,
+    "startTimeMillis":1764000000000,
+    "deadlineMillis":1764000020000
   }
 }
 ```
+
+#### Automatic progress
+An accepted answer is scored once. When every connected participant in the room has answered, the server
+closes the question and immediately broadcasts the next `QUESTION`; otherwise it waits for the server
+deadline. Answers received after closure are rejected as `LATE`. After question 10 closes, the server
+broadcasts `QUIZ_FINISHED` and does not schedule another question.
 
 #### `ANSWER` (Client -> Server)
 Participant submits selected multiple-choice index. The room and player always come from the server-side
@@ -179,7 +190,7 @@ Direct verdict to the answering participant. `reason` is present only when `acce
 The question no longer accepts answers; reveals the correct option.
 ```json
 {"type":"QUESTION_CLOSED","payload":{"roomId":"QB42KD","questionId":"java-101","correctOptionIndex":1,
- "questionNumber":1,"totalQuestions":5,"lastQuestion":false}}
+ "questionNumber":1,"totalQuestions":10,"lastQuestion":false}}
 ```
 
 #### `LEADERBOARD` (Server -> Client Broadcast)
@@ -187,16 +198,16 @@ Consistent snapshot after each close. Order: score descending, then username asc
 then playerId. Equal scores share a rank (1, 1, 3). Disconnected players keep their score with
 `connected:false`.
 ```json
-{"type":"LEADERBOARD","payload":{"roomId":"QB42KD","questionsClosed":1,"totalQuestions":5,"lastQuestion":false,
+{"type":"LEADERBOARD","payload":{"roomId":"QB42KD","questionsClosed":1,"totalQuestions":10,"lastQuestion":false,
  "entries":[{"rank":1,"playerId":"usr-1a2b3c4d","username":"Alice","score":10,"correctCount":1,"connected":true},
             {"rank":2,"playerId":"usr-9f8e7d6c","username":"Bob","score":0,"correctCount":0,"connected":false}]}}
 ```
 
 #### `QUIZ_FINISHED` (Server -> Client Broadcast)
-After the last question closes. `winners` lists every rank-1 player with a positive score (several on a
+After question 10 closes. `winners` lists every rank-1 player with a positive score (several on a
 tie, empty if nobody scored).
 ```json
-{"type":"QUIZ_FINISHED","payload":{"roomId":"QB42KD","totalQuestions":5,"winners":["Alice"],
+{"type":"QUIZ_FINISHED","payload":{"roomId":"QB42KD","totalQuestions":10,"winners":["Alice"],
  "finalStandings":[ ...same entry shape as LEADERBOARD... ],"finishedAt":1764000000000}}
 ```
 
@@ -214,6 +225,7 @@ Common error codes:
 - `ROOM_NOT_FOUND`: Room code does not exist.
 - `ROOM_FULL`: Room capacity exceeded.
 - `FORBIDDEN`: Non-host attempting `START_QUIZ`.
+- `AUTOMATIC_PROGRESS`: Legacy `NEXT_QUESTION` request; the server controls question transitions.
 - `MALFORMED_MESSAGE`: Unparseable JSON.
 - `FRAME_TOO_LARGE`: Line exceeded 64 KiB cap.
 

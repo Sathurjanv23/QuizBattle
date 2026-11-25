@@ -36,9 +36,9 @@ import java.util.concurrent.ConcurrentHashMap;
  *       point-in-time view (no player shows a score from "after" while another shows "before").</li>
  * </ul>
  *
- * <p>Who calls {@link #closeQuestion}: today the host's NEXT_QUESTION action in
- * {@code DefaultServerMessageDispatcher}. Member 3's ScheduledExecutorService deadline task can call
- * the same method; it is idempotent, so a timer close and a host close racing each other is safe.</p>
+ * <p>The dispatcher closes questions when every connected player has answered or when the
+ * server-side deadline expires. Both close paths use this room's lock, so an answer racing a close
+ * is either counted in full or rejected as late.</p>
  */
 public class ScoreManager {
 
@@ -214,8 +214,8 @@ public class ScoreManager {
     /**
      * Closes the question so any later answer for it is rejected as {@link RejectReason#LATE}.
      *
-     * <p>Idempotent and thread-safe: if the host and a timer both close the same question, exactly
-     * one call returns {@code true}. Member 3's timer task should call this method.</p>
+     * <p>Idempotent and thread-safe: if a deadline and an answer-triggered close race, exactly one
+     * call returns {@code true}.</p>
      *
      * @return true only for the call that actually closed the question
      */
@@ -235,6 +235,41 @@ public class ScoreManager {
         }
     }
 
+    /**
+     * Atomically closes an open question only when every connected participant has answered it.
+     * A room with no connected participants waits for its deadline instead.
+     */
+    public boolean closeQuestionIfAllConnectedAnswered(String roomId, String questionId) {
+        RoomScoreboard board = board(roomId);
+        if (board == null || questionId == null) {
+            return false;
+        }
+        synchronized (board.lock) {
+            if (board.finished || !questionId.equals(board.openQuestionId)) {
+                return false;
+            }
+            Set<String> answered = board.answeredByQuestion.getOrDefault(questionId, Collections.emptySet());
+            boolean hasConnectedPlayers = false;
+            for (PlayerTally player : board.players.values()) {
+                if (!player.connected) {
+                    continue;
+                }
+                hasConnectedPlayers = true;
+                if (!answered.contains(player.playerId)) {
+                    return false;
+                }
+            }
+            if (!hasConnectedPlayers) {
+                return false;
+            }
+            board.openQuestionId = null;
+            board.closedQuestions.add(questionId);
+            log.info("ScoreManager: room {} closed question {} after all connected players answered",
+                    roomId, questionId);
+            return true;
+        }
+    }
+
     /** Ends the quiz: closes any open question and freezes scores. */
     public void finishQuiz(String roomId) {
         RoomScoreboard board = board(roomId);
@@ -247,6 +282,13 @@ public class ScoreManager {
                 board.openQuestionId = null;
             }
             board.finished = true;
+        }
+    }
+
+    /** Removes a terminated room's scoreboard and all retained answer state. */
+    public void removeRoom(String roomId) {
+        if (roomId != null) {
+            rooms.remove(key(roomId));
         }
     }
 
@@ -275,6 +317,15 @@ public class ScoreManager {
      * @param correct    correctness evaluated on the server against the server-held answer key
      */
     public AnswerOutcome submitAnswer(String roomId, String playerId, String questionId, boolean correct) {
+        return submitAnswer(roomId, playerId, questionId, correct, 0);
+    }
+
+    /**
+     * Records one answer while enforcing its server-authoritative deadline.
+     * A zero deadline preserves the direct game-service API for callers without a timed session.
+     */
+    public AnswerOutcome submitAnswer(
+            String roomId, String playerId, String questionId, boolean correct, long deadlineMillis) {
         RoomScoreboard board = board(roomId);
         if (board == null) {
             return AnswerOutcome.rejected(questionId, RejectReason.NO_ACTIVE_QUIZ, 0);
@@ -285,6 +336,9 @@ public class ScoreManager {
                 return AnswerOutcome.rejected(questionId, RejectReason.WRONG_ROOM, 0);
             }
             if (board.finished || questionId == null || !questionId.equals(board.openQuestionId)) {
+                return AnswerOutcome.rejected(questionId, RejectReason.LATE, tally.score);
+            }
+            if (deadlineMillis > 0 && System.currentTimeMillis() >= deadlineMillis) {
                 return AnswerOutcome.rejected(questionId, RejectReason.LATE, tally.score);
             }
             Set<String> answered = board.answeredByQuestion.computeIfAbsent(questionId, q -> new HashSet<>());

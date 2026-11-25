@@ -92,6 +92,9 @@ public class QuizBattleClientApp extends Application {
 
         primaryStage.setOnCloseRequest(e -> {
             log.info("Client window closing, releasing network resources...");
+            if (playerHomeView != null) {
+                playerHomeView.stopQuestionTimer();
+            }
             if (networkClient != null) {
                 networkClient.disconnect();
             }
@@ -166,6 +169,9 @@ public class QuizBattleClientApp extends Application {
         networkClient.onConnectionStateChange(state -> {
             log.info("Network state change observed: {}", state);
             if (state == ClientConnectionState.DISCONNECTED || state == ClientConnectionState.ERROR) {
+                if (playerHomeView != null) {
+                    playerHomeView.stopQuestionTimer();
+                }
                 rootContainer.setConnectionStatus("Disconnected", "#ef4444");
             } else if (state == ClientConnectionState.CONNECTED) {
                 rootContainer.setConnectionStatus("Connected", "#10b981");
@@ -227,9 +233,6 @@ public class QuizBattleClientApp extends Application {
             log.debug("Received ROOM_STATE broadcast: {}", payload);
             if (payload != null && payload.has("hostPlayerId")) {
                 currentHostPlayerId = payload.get("hostPlayerId").asText();
-                if (playerHomeView != null) {
-                    playerHomeView.setCanAdvance(canAdvanceQuiz());
-                }
             }
             if (multiplayerLobbyView != null && payload != null) {
                 multiplayerLobbyView.updateRoomState(payload);
@@ -239,6 +242,9 @@ public class QuizBattleClientApp extends Application {
         // 6. ROOM_LEFT event
         networkClient.registerListener(MessageType.ROOM_LEFT, message -> {
             log.info("Left room, returning to dashboard.");
+            if (playerHomeView != null) {
+                playerHomeView.stopQuestionTimer();
+            }
             currentRoomCode = null;
             currentHostPlayerId = null;
             multiplayerLobbyView = null;
@@ -292,22 +298,13 @@ public class QuizBattleClientApp extends Application {
             }
         });
 
-        // Member 5: LEADERBOARD -> live leaderboard screen (skipped after the last question,
-        // because QUIZ_FINISHED follows immediately)
-        networkClient.registerListener(MessageType.LEADERBOARD, message -> {
-            JsonNode payload = message.getPayload();
-            if (payload == null || payload.path("lastQuestion").asBoolean(false)) {
-                return;
-            }
-            LeaderboardView view = new LeaderboardView(currentPlayerId, canAdvanceQuiz(), this::requestNextQuestion);
-            view.update(payload);
-            rootContainer.navigateTo(view);
-        });
-
         // Member 5: QUIZ_FINISHED -> final results
         networkClient.registerListener(MessageType.QUIZ_FINISHED, message -> {
             lastQuizFinished = message.getPayload();
             quizOver = true;
+            if (playerHomeView != null) {
+                playerHomeView.stopQuestionTimer();
+            }
             showFinalResultsScreen();
         });
 
@@ -418,19 +415,17 @@ public class QuizBattleClientApp extends Application {
                     currentHostPort,
                     this::joinDefaultRoom,
                     this::submitAnswer,
-                    this::requestNextQuestion,
                     this::disconnectAndReturn
             );
         }
         playerHomeView.onRoomJoined(currentRoomCode != null ? currentRoomCode : "room-default",
                 currentRoomName != null ? currentRoomName : "General Trivia Arena");
-        playerHomeView.setCanAdvance(canAdvanceQuiz());
         playerHomeView.displayQuestion(question, this::submitAnswer);
         rootContainer.navigateTo(playerHomeView);
     }
 
-    /** Room host, or anyone in the quick-play default room, may close/advance questions. */
-    private boolean canAdvanceQuiz() {
+    /** Room host, or anyone in quick play, may start another quiz after completion. */
+    private boolean canStartAnotherQuiz() {
         if (currentRoomCode == null || "room-default".equalsIgnoreCase(currentRoomCode)) {
             return true;
         }
@@ -446,10 +441,13 @@ public class QuizBattleClientApp extends Application {
 
     /** Member 5: Final Results screen. */
     private void showFinalResultsScreen() {
+        if (playerHomeView != null) {
+            playerHomeView.stopQuestionTimer();
+        }
         finalResultsView = new FinalResultsView(
                 currentPlayerId,
                 lastQuizFinished,
-                canAdvanceQuiz(),
+                canStartAnotherQuiz(),
                 this::showPersonalSummaryScreen,
                 this::showQuizCategoryScreen,
                 this::leaveCurrentRoom
@@ -482,7 +480,6 @@ public class QuizBattleClientApp extends Application {
                 currentHostPort,
                 this::joinDefaultRoom,
                 this::submitAnswer,
-                this::requestNextQuestion,
                 this::disconnectAndReturn
         );
         rootContainer.navigateTo(playerHomeView);
@@ -541,23 +538,11 @@ public class QuizBattleClientApp extends Application {
         )));
     }
 
-    /**
-     * Host "next" action. The server decides what it means: close the open question
-     * (QUESTION_CLOSED + LEADERBOARD) or advance to the next one.
-     */
-    private void requestNextQuestion() {
-        String reqId = UUID.randomUUID().toString();
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("roomId", currentRoomCode != null ? currentRoomCode : "room-default");
-        if (playerHomeView != null && playerHomeView.getCurrentQuestion() != null) {
-            payload.put("questionId", playerHomeView.getCurrentQuestion().getQuestionId());
-        }
-        log.info("Requesting NEXT_QUESTION: {}", payload);
-        networkClient.send(Message.request(MessageType.NEXT_QUESTION, reqId, payload));
-    }
-
     private void disconnectAndReturn() {
         log.info("User requested disconnect. Returning to manual connect screen...");
+        if (playerHomeView != null) {
+            playerHomeView.stopQuestionTimer();
+        }
         if (networkClient != null) {
             networkClient.disconnect();
         }

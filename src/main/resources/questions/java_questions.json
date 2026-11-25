@@ -38,5 +38,45 @@
     "correctOptionIndex": 1,
     "timeLimitSeconds": 20,
     "pointValue": 100
+  },
+  {
+    "questionId": "java-106",
+    "text": "Which interface represents a task that returns a result and may throw an exception?",
+    "options": ["Runnable", "Callable", "Iterable", "Comparator"],
+    "correctOptionIndex": 1,
+    "timeLimitSeconds": 20,
+    "pointValue": 100
+  },
+  {
+    "questionId": "java-107",
+    "text": "Which collection is designed for thread-safe concurrent key-value access?",
+    "options": ["HashMap", "TreeMap", "ConcurrentHashMap", "LinkedHashMap"],
+    "correctOptionIndex": 2,
+    "timeLimitSeconds": 20,
+    "pointValue": 100
+  },
+  {
+    "questionId": "java-108",
+    "text": "Which keyword prevents a field from being reassigned after initialization?",
+    "options": ["volatile", "synchronized", "final", "transient"],
+    "correctOptionIndex": 2,
+    "timeLimitSeconds": 20,
+    "pointValue": 100
+  },
+  {
+    "questionId": "java-109",
+    "text": "Which Java time type represents an instant on the UTC timeline?",
+    "options": ["LocalDate", "LocalTime", "Instant", "YearMonth"],
+    "correctOptionIndex": 2,
+    "timeLimitSeconds": 20,
+    "pointValue": 100
+  },
+  {
+    "questionId": "java-110",
+    "text": "Which method should be called to shut down an ExecutorService after submitting tasks?",
+    "options": ["closeNow()", "shutdown()", "terminate()", "dispose()"],
+    "correctOptionIndex": 1,
+    "timeLimitSeconds": 20,
+    "pointValue": 100
   }
 ]
