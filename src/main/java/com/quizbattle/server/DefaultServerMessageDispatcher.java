@@ -38,6 +38,7 @@ import java.util.function.BiConsumer;
 public class DefaultServerMessageDispatcher implements ServerMessageDispatcher {
 
     private static final Logger log = LoggerFactory.getLogger(DefaultServerMessageDispatcher.class);
+    private static final long ANSWER_FEEDBACK_DELAY_MILLIS = 2_000;
 
     private final QuizRoomService roomService;
     private final DefaultQuizGameService gameService;
@@ -401,9 +402,9 @@ public class DefaultServerMessageDispatcher implements ServerMessageDispatcher {
 
     /**
      * Closes the room's current question if it is {@code questionId}, then broadcasts QUESTION_CLOSED
-     * and LEADERBOARD. If it was the last question it also finishes the quiz and broadcasts
-     * QUIZ_FINISHED. Safe to call from any thread (including the server deadline scheduler); only the
-     * caller that actually closes the question broadcasts.
+     * and LEADERBOARD. Quiz progression occurs after a short feedback pause. Safe to call from any
+     * thread (including the server deadline scheduler); only the caller that actually closes the
+     * question broadcasts.
      *
      * @return true if this call closed the question
      */
@@ -423,7 +424,7 @@ public class DefaultServerMessageDispatcher implements ServerMessageDispatcher {
             if (closed.isEmpty()) {
                 return false;
             }
-            completeQuestionAndAdvance(roomId, closed.get(), expectedTimer);
+            closeQuestionAndScheduleAdvance(roomId, closed.get(), expectedTimer);
             return true;
         }
     }
@@ -441,12 +442,12 @@ public class DefaultServerMessageDispatcher implements ServerMessageDispatcher {
             if (closed.isEmpty()) {
                 return false;
             }
-            completeQuestionAndAdvance(roomId, closed.get(), timer);
+            closeQuestionAndScheduleAdvance(roomId, closed.get(), timer);
             return true;
         }
     }
 
-    private void completeQuestionAndAdvance(String roomId, Question closed, ActiveQuestionTimer timer) {
+    private void closeQuestionAndScheduleAdvance(String roomId, Question closed, ActiveQuestionTimer timer) {
         questionTimers.remove(roomKey(roomId), timer);
         timer.cancel();
 
@@ -464,13 +465,22 @@ public class DefaultServerMessageDispatcher implements ServerMessageDispatcher {
         broadcastToRoom(roomId, Message.event(MessageType.QUESTION_CLOSED, closedPayload));
         broadcastLeaderboard(roomId, last);
 
-        Advance advance = gameService.advanceAfter(roomId, closed.getQuestionId());
-        if (advance.nextQuestion() != null) {
-            scheduleAndBroadcastQuestion(roomId, advance.nextQuestion());
-        } else if (advance.finished()) {
-            broadcastQuizFinished(roomId);
-        } else {
-            log.warn("Question {} in room {} closed without an advance", closed.getQuestionId(), roomId);
+        questionScheduler.schedule(
+                () -> advanceAfterFeedback(roomId, closed.getQuestionId()),
+                ANSWER_FEEDBACK_DELAY_MILLIS,
+                TimeUnit.MILLISECONDS);
+    }
+
+    private void advanceAfterFeedback(String roomId, String closedQuestionId) {
+        synchronized (roomLifecycleLock(roomId)) {
+            Advance advance = gameService.advanceAfter(roomId, closedQuestionId);
+            if (advance.nextQuestion() != null) {
+                scheduleAndBroadcastQuestion(roomId, advance.nextQuestion());
+            } else if (advance.finished()) {
+                broadcastQuizFinished(roomId);
+            } else {
+                log.warn("Question {} in room {} closed without an advance", closedQuestionId, roomId);
+            }
         }
     }
 

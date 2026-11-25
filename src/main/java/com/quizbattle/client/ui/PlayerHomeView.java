@@ -46,6 +46,7 @@ public class PlayerHomeView extends VBox {
 
     private Question currentQuestion;
     private int currentScore = 0;
+    private int selectedOptionIndex = -1;
     private boolean answeredCurrent = false;
     private Timeline countdownTimeline;
     private long deadlineMillis;
@@ -196,6 +197,7 @@ public class PlayerHomeView extends VBox {
         optionButtons.clear();
         resultBanner.setVisible(false);
         resultBanner.setManaged(false);
+        selectedOptionIndex = -1;
         answeredCurrent = false;
 
         List<String> options = question.getOptions();
@@ -215,6 +217,7 @@ public class PlayerHomeView extends VBox {
                 for (Button b : optionButtons) {
                     b.setDisable(true);
                 }
+                selectedOptionIndex = optionIndex;
                 optBtn.getStyleClass().add("option-selected");
                 resultBanner.getStyleClass().removeAll("result-correct", "result-incorrect");
                 resultBanner.setText("Submitting answer...");
@@ -290,6 +293,10 @@ public class PlayerHomeView extends VBox {
         }
 
         answeredCurrent = true;
+        if (selectedOptionIndex >= 0 && selectedOptionIndex < optionButtons.size()) {
+            optionButtons.get(selectedOptionIndex).getStyleClass()
+                    .add(correct ? "option-correct" : "option-incorrect");
+        }
         if (correct) {
             resultBanner.setText("✓ Correct! +" + pointsAwarded + " points. Total Score: " + totalScore + " pts");
             resultBanner.getStyleClass().add("result-correct");
