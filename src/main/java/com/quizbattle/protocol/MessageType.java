@@ -22,7 +22,7 @@ public enum MessageType {
 
     // Quiz Lifecycle
     START_QUIZ,
-    /** Host action: close the open question (QUESTION_CLOSED + LEADERBOARD), or advance if already closed. */
+    /** Legacy command; quiz questions now close and advance automatically on the server. */
     NEXT_QUESTION,
     QUESTION,
     ANSWER,

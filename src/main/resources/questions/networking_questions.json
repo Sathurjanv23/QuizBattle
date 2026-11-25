@@ -38,5 +38,45 @@
     "correctOptionIndex": 1,
     "timeLimitSeconds": 20,
     "pointValue": 100
+  },
+  {
+    "questionId": "net-106",
+    "text": "Which protocol is commonly used to automatically assign IP addresses to clients?",
+    "options": ["DHCP", "DNS", "SSH", "NTP"],
+    "correctOptionIndex": 0,
+    "timeLimitSeconds": 20,
+    "pointValue": 100
+  },
+  {
+    "questionId": "net-107",
+    "text": "Which TCP flag is used to begin a connection handshake?",
+    "options": ["FIN", "SYN", "RST", "PSH"],
+    "correctOptionIndex": 1,
+    "timeLimitSeconds": 20,
+    "pointValue": 100
+  },
+  {
+    "questionId": "net-108",
+    "text": "What does DNS primarily map to an IP address?",
+    "options": ["A domain name", "A MAC address", "A TCP port", "A subnet mask"],
+    "correctOptionIndex": 0,
+    "timeLimitSeconds": 20,
+    "pointValue": 100
+  },
+  {
+    "questionId": "net-109",
+    "text": "Which network device forwards packets between different IP networks?",
+    "options": ["Hub", "Router", "Repeater", "Bridge"],
+    "correctOptionIndex": 1,
+    "timeLimitSeconds": 20,
+    "pointValue": 100
+  },
+  {
+    "questionId": "net-110",
+    "text": "Which port is the standard default for SSH?",
+    "options": ["21", "22", "53", "443"],
+    "correctOptionIndex": 1,
+    "timeLimitSeconds": 20,
+    "pointValue": 100
   }
 ]

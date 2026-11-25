@@ -30,6 +30,8 @@ class QuizProgressionTest {
         assertEquals("java-101", q1.getQuestionId());
         assertNull(q1.getCorrectOptionIndex(), "client copy hides the answer");
         assertEquals(10, q1.getPointValue());
+        assertEquals(20, q1.getTimeLimitSeconds());
+        assertEquals(10, game.getTotalQuestions(ROOM));
 
         assertFalse(game.advanceAfter(ROOM, "java-101").advanced(), "cannot advance an open question");
         assertTrue(game.closeCurrentQuestion(ROOM, "java-101").isPresent());

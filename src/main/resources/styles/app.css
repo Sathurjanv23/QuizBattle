@@ -199,6 +199,17 @@
     -fx-padding: 6px 0 10px 0;
 }
 
+.question-timer-label {
+    -fx-font-size: 15px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #fbbf24;
+    -fx-min-width: 100px;
+}
+
+.question-timer-progress > .bar {
+    -fx-background-color: #38bdf8;
+}
+
 .option-button {
     -fx-background-color: #0f172a;
     -fx-text-fill: #e2e8f0;

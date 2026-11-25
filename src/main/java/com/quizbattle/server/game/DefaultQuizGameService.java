@@ -28,9 +28,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * server-held correct option. It holds <b>no scores</b>: every score read or write is delegated to
  * the single authority {@link ScoreManager} (Member 5).</p>
  *
- * <p>Question progression per room is guarded by that room's {@link RoomQuiz} monitor, so a host
- * "next" action, a future Member 3 timer, and the blocking server's worker threads cannot skip or
- * double-advance a question.</p>
+ * <p>Question progression per room is guarded by that room's {@link RoomQuiz} monitor, so answer
+ * submissions and deadline callbacks cannot skip or double-advance a question.</p>
  */
 public class DefaultQuizGameService implements QuizGameService {
 
@@ -215,8 +214,8 @@ public class DefaultQuizGameService implements QuizGameService {
     /**
      * Closes the room's current question in {@link ScoreManager}.
      *
-     * <p>Member 3 timer will call closeQuestion() here: a ScheduledExecutorService deadline task
-     * should call this method (or {@link ScoreManager#closeQuestion}) when the time limit expires.</p>
+     * <p>The dispatcher calls this from the scheduled deadline task when the server's time limit
+     * expires.</p>
      *
      * @param expectedQuestionId if non-null, only close when this is still the current question
      * @return the closed question (with correct answer, server-side copy) only if this call closed it
@@ -235,6 +234,25 @@ public class DefaultQuizGameService implements QuizGameService {
                 return Optional.empty();
             }
             boolean closed = scoreManager.closeQuestion(roomId, current.getQuestionId());
+            return closed ? Optional.of(current) : Optional.empty();
+        }
+    }
+
+    /**
+     * Closes the current question only if every connected participant has submitted an answer.
+     * The room quiz monitor and scoreboard lock keep this transition atomic with quiz restarts.
+     */
+    public Optional<Question> closeCurrentQuestionIfAllAnswered(String roomId, String expectedQuestionId) {
+        RoomQuiz quiz = roomQuizzes.get(key(roomId));
+        if (quiz == null || expectedQuestionId == null) {
+            return Optional.empty();
+        }
+        synchronized (quiz) {
+            Question current = quiz.finished ? null : quiz.current();
+            if (current == null || !expectedQuestionId.equals(current.getQuestionId())) {
+                return Optional.empty();
+            }
+            boolean closed = scoreManager.closeQuestionIfAllConnectedAnswered(roomId, expectedQuestionId);
             return closed ? Optional.of(current) : Optional.empty();
         }
     }
@@ -307,6 +325,11 @@ public class DefaultQuizGameService implements QuizGameService {
      * atomically whether it counts.
      */
     public AnswerOutcome submitAnswerDetailed(String roomId, String playerId, String questionId, int selectedOptionIndex) {
+        return submitAnswerDetailed(roomId, playerId, questionId, selectedOptionIndex, 0);
+    }
+
+    public AnswerOutcome submitAnswerDetailed(
+            String roomId, String playerId, String questionId, int selectedOptionIndex, long deadlineMillis) {
         boolean correct = false;
         RoomQuiz quiz = roomQuizzes.get(key(roomId));
         if (quiz != null && questionId != null) {
@@ -318,7 +341,7 @@ public class DefaultQuizGameService implements QuizGameService {
                 }
             }
         }
-        AnswerOutcome outcome = scoreManager.submitAnswer(roomId, playerId, questionId, correct);
+        AnswerOutcome outcome = scoreManager.submitAnswer(roomId, playerId, questionId, correct, deadlineMillis);
         if (outcome.accepted()) {
             log.info("Player {} in room {} answered {} {} (+{} pts, total {})", playerId, roomId, questionId,
                     outcome.correct() ? "CORRECTLY" : "INCORRECTLY", outcome.pointsAwarded(), outcome.totalScore());
@@ -340,6 +363,14 @@ public class DefaultQuizGameService implements QuizGameService {
 
     public void markDisconnected(String roomId, String playerId) {
         scoreManager.markDisconnected(roomId, playerId);
+    }
+
+    /** Removes all per-room quiz and score state when an ephemeral room is terminated. */
+    public void removeRoom(String roomId) {
+        if (roomId != null) {
+            roomQuizzes.remove(key(roomId));
+            scoreManager.removeRoom(roomId);
+        }
     }
 
     public int getPlayerScore(String roomId, String playerId) {
@@ -378,7 +409,8 @@ public class DefaultQuizGameService implements QuizGameService {
     /** Client-safe copy: hides the correct option and shows the fixed point value actually awarded. */
     private static Question toClient(Question q) {
         return new Question(q.getQuestionId(), q.getText(), q.getOptions(), null,
-                q.getTimeLimitSeconds(), ScoreManager.POINTS_PER_CORRECT);
+                q.getTimeLimitSeconds(), ScoreManager.POINTS_PER_CORRECT, q.getQuestionNumber(),
+                q.getTotalQuestions(), q.getStartTimeMillis(), q.getDeadlineMillis());
     }
 
     private static String key(String roomId) {

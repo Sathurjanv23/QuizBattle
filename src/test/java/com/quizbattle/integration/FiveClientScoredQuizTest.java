@@ -34,11 +34,11 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Member 5: a full five-client scored quiz over the real NIO server.
+ * Full ten-question, five-client scored quiz over the real NIO server.
  *
  * <p>Every wait is a blocking-queue poll with a timeout (an event wait, not a sleep).</p>
  */
-@DisplayName("Member 5: five-client scored quiz end-to-end (NIO)")
+@DisplayName("Five-client ten-question scored quiz end-to-end (NIO)")
 class FiveClientScoredQuizTest {
 
     private static final MessageType[] TRACKED = {
@@ -95,7 +95,7 @@ class FiveClientScoredQuizTest {
             List<Question> qs = new ObjectMapper().readValue(in, new TypeReference<List<Question>>() {});
             qs.forEach(q -> answerKey.put(q.getQuestionId(), q.getCorrectOptionIndex()));
         }
-        assertEquals(5, answerKey.size(), "Java bank should have 5 questions");
+        assertEquals(10, answerKey.size(), "Java bank should have 10 questions");
     }
 
     @AfterEach
@@ -127,7 +127,7 @@ class FiveClientScoredQuizTest {
     }
 
     @Test
-    @DisplayName("5 clients, 5 questions: duplicates/late/wrong-room rejected, disconnect keeps score, correct final ranking")
+    @DisplayName("5 clients, 10 questions: timed auto-progression, answer validation, and final ranking")
     void fullScoredQuiz() throws Exception {
         Player alice = connect("Alice");
         Player bob = connect("Bob");
@@ -142,25 +142,40 @@ class FiveClientScoredQuizTest {
             p.await(MessageType.ROOM_JOINED);
         }
 
-        // Non-host cannot advance
+        // The legacy manual-advance request is rejected for non-hosts.
         bob.send(MessageType.NEXT_QUESTION, Map.of());
         assertEquals("FORBIDDEN", bob.await(MessageType.ERROR).get("code").asText());
 
         alice.send(MessageType.START_QUIZ, Map.of("roomId", code, "category", "Java"));
 
         List<Player> connected = new ArrayList<>(List.of(alice, bob, charlie, diana, evan));
-        for (int qNo = 1; qNo <= 5; qNo++) {
+        for (int qNo = 1; qNo <= 10; qNo++) {
             String qid = null;
+            long startTime = 0;
+            long deadline = 0;
             for (Player p : connected) {
                 JsonNode q = p.await(MessageType.QUESTION);
                 assertFalse(q.has("correctOptionIndex"), "answer must not leak to clients");
                 assertEquals(10, q.get("pointValue").asInt(), "clients see the fixed 10 points");
+                assertEquals(qNo, q.get("questionNumber").asInt());
+                assertEquals(10, q.get("totalQuestions").asInt());
                 if (qid == null) qid = q.get("questionId").asText();
                 assertEquals(qid, q.get("questionId").asText(), p.name + " got a different question");
+                if (startTime == 0) {
+                    startTime = q.get("startTimeMillis").asLong();
+                    deadline = q.get("deadlineMillis").asLong();
+                }
+                assertEquals(startTime, q.get("startTimeMillis").asLong(), "room shares one start time");
+                assertEquals(deadline, q.get("deadlineMillis").asLong(), "room shares one deadline");
+            }
+            assertEquals(20_000, deadline - startTime, "server starts a 20-second deadline");
+            if (qNo == 1) {
+                alice.send(MessageType.NEXT_QUESTION, Map.of("questionId", qid));
+                assertEquals("AUTOMATIC_PROGRESS", alice.await(MessageType.ERROR).get("code").asText());
             }
 
             // Alice: always right. Bob: right on odd questions. Charlie: always wrong.
-            // Diana: right until she disconnects after Q2. Evan: right on Q1, late afterwards.
+            // Diana: right until she disconnects after Q2. Evan: right on Q1, then wrong.
             assertTrue(alice.answer(qid, right(qid)).get("accepted").asBoolean());
             JsonNode bobResult = bob.answer(qid, qNo % 2 == 1 ? right(qid) : wrong(qid));
             assertTrue(bobResult.get("accepted").asBoolean());
@@ -179,12 +194,8 @@ class FiveClientScoredQuizTest {
             if (connected.contains(diana)) {
                 assertTrue(diana.answer(qid, right(qid)).get("accepted").asBoolean());
             }
-            if (qNo == 1) {
-                assertTrue(evan.answer(qid, right(qid)).get("accepted").asBoolean());
-            }
+            assertTrue(evan.answer(qid, qNo == 1 ? right(qid) : wrong(qid)).get("accepted").asBoolean());
 
-            // Host closes the question
-            alice.send(MessageType.NEXT_QUESTION, Map.of("questionId", qid));
             JsonNode aliceLeaderboard = null;
             for (Player p : connected) {
                 JsonNode closed = p.await(MessageType.QUESTION_CLOSED);
@@ -215,16 +226,12 @@ class FiveClientScoredQuizTest {
                 awaitPlayerCount(alice, 4);
             }
 
-            if (qNo < 5) {
-                alice.send(MessageType.NEXT_QUESTION, Map.of("questionId", qid));
-                if (qNo == 1) {
-                    // Wait for Q2, then a stale second "next" for Q1 must not skip a question
-                    for (Player p : connected) {
-                        JsonNode q2 = p.await(MessageType.QUESTION);
-                        p.inbox.get(MessageType.QUESTION).add(q2); // put back for the loop
-                    }
-                    alice.send(MessageType.NEXT_QUESTION, Map.of("questionId", qid));
-                    assertEquals("STALE_QUESTION", alice.await(MessageType.ERROR).get("code").asText());
+            if (qNo < 10) {
+                for (Player p : connected) {
+                    JsonNode next = p.await(MessageType.QUESTION);
+                    assertEquals(qNo + 1, next.get("questionNumber").asInt());
+                    assertEquals(10, next.get("totalQuestions").asInt());
+                    p.inbox.get(MessageType.QUESTION).add(next);
                 }
             }
         }
@@ -232,20 +239,20 @@ class FiveClientScoredQuizTest {
         // After the last close the server finishes the quiz
         for (Player p : connected) {
             JsonNode fin = p.await(MessageType.QUIZ_FINISHED);
-            assertEquals(5, fin.get("totalQuestions").asInt());
+            assertEquals(10, fin.get("totalQuestions").asInt());
             assertEquals(List.of("Alice"), toList(fin.get("winners")));
 
             JsonNode standings = fin.get("finalStandings");
             assertEquals(List.of("Alice", "Bob", "Diana", "Evan", "Charlie"), names(standings));
-            assertEquals(List.of(50, 30, 20, 10, 0), scores(standings));
+            assertEquals(List.of(100, 50, 20, 10, 0), scores(standings));
             assertEquals(List.of(1, 2, 3, 4, 5), ranks(standings));
-            assertEquals(List.of(5, 3, 2, 1, 0), correctCounts(standings));
+            assertEquals(List.of(10, 5, 2, 1, 0), correctCounts(standings));
             assertFalse(standings.get(2).get("connected").asBoolean(), "Diana is marked disconnected");
             assertTrue(standings.get(0).get("connected").asBoolean());
         }
 
         // Quiz is over: answers are LATE
-        JsonNode afterEnd = bob.answer("java-105", 0);
+        JsonNode afterEnd = bob.answer("java-110", 0);
         assertEquals("LATE", afterEnd.get("reason").asText());
     }
 

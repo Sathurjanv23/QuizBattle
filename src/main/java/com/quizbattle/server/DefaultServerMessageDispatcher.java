@@ -20,10 +20,15 @@ import org.slf4j.LoggerFactory;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.function.BiConsumer;
 
 /**
@@ -38,6 +43,33 @@ public class DefaultServerMessageDispatcher implements ServerMessageDispatcher {
     private final DefaultQuizGameService gameService;
     private final Map<String, ClientSession> activeSessions = new ConcurrentHashMap<>();
     private final Map<MessageType, BiConsumer<ClientSession, Message>> customHandlers = new ConcurrentHashMap<>();
+    private final Map<String, ActiveQuestionTimer> questionTimers = new ConcurrentHashMap<>();
+    private final Map<String, Object> roomLifecycleLocks = new ConcurrentHashMap<>();
+    private final ScheduledExecutorService questionScheduler = Executors.newScheduledThreadPool(2, runnable -> {
+        Thread thread = new Thread(runnable, "quizbattle-question-deadline");
+        thread.setDaemon(true);
+        return thread;
+    });
+
+    private static final class ActiveQuestionTimer {
+        final String questionId;
+        final Question question;
+        final long deadlineMillis;
+        volatile ScheduledFuture<?> future;
+
+        ActiveQuestionTimer(String questionId, Question question, long deadlineMillis) {
+            this.questionId = questionId;
+            this.question = question;
+            this.deadlineMillis = deadlineMillis;
+        }
+
+        void cancel() {
+            ScheduledFuture<?> scheduled = future;
+            if (scheduled != null) {
+                scheduled.cancel(false);
+            }
+        }
+    }
 
     public DefaultServerMessageDispatcher() {
         this(new ConcurrentRoomManager(), new DefaultQuizGameService());
@@ -130,8 +162,10 @@ public class DefaultServerMessageDispatcher implements ServerMessageDispatcher {
             }
         }
 
+        String previousRoomId = session.getCurrentRoomId();
         Room room = roomService.createRoom(session.getPlayerId(), session.getUsername(), roomName, maxPlayers);
         session.setCurrentRoomId(room.getRoomId());
+        handlePreviousRoomDeparture(session, previousRoomId, room.getRoomId());
 
         Map<String, Object> respPayload = new LinkedHashMap<>();
         respPayload.put("roomId", room.getRoomId());
@@ -187,6 +221,7 @@ public class DefaultServerMessageDispatcher implements ServerMessageDispatcher {
             return;
         }
 
+        String previousRoomId = session.getCurrentRoomId();
         Room room = roomService.joinRoom(targetRoomId, session.getPlayerId(), session.getUsername());
         if (room == null) {
             session.send(Message.error(message.getRequestId(), "JOIN_FAILED", "Failed to join room '" + targetRoomId + "'"));
@@ -194,6 +229,7 @@ public class DefaultServerMessageDispatcher implements ServerMessageDispatcher {
         }
 
         session.setCurrentRoomId(room.getRoomId());
+        handlePreviousRoomDeparture(session, previousRoomId, room.getRoomId());
 
         // Confirm join to client
         Map<String, Object> respPayload = Map.of(
@@ -206,15 +242,26 @@ public class DefaultServerMessageDispatcher implements ServerMessageDispatcher {
         // Broadcast updated room state to all room participants
         broadcastRoomState(room.getRoomId());
 
-        // Quick-play default room always has a quiz running
+        boolean startedDefaultQuiz = false;
         if (ConcurrentRoomManager.DEFAULT_ROOM_ID.equalsIgnoreCase(room.getRoomId())) {
-            gameService.ensureQuizRunning(room.getRoomId());
+            synchronized (roomLifecycleLock(room.getRoomId())) {
+                if (!gameService.isQuizActive(room.getRoomId())) {
+                    Map<String, String> participants = new LinkedHashMap<>();
+                    room.getPlayers().forEach(p -> participants.put(p.getPlayerId(), p.getUsername()));
+                    Optional<Question> firstQuestion = gameService.startQuiz(
+                            room.getRoomId(), DefaultQuizGameService.DEFAULT_CATEGORY, participants);
+                    firstQuestion.ifPresent(question -> scheduleAndBroadcastQuestion(room.getRoomId(), question));
+                    startedDefaultQuiz = true;
+                }
+            }
         }
-        // Mid-quiz joiners become scored participants and receive the open question
+
+        // Mid-quiz joiners become scored participants and receive the existing synchronized deadline.
         if (gameService.isQuizActive(room.getRoomId())) {
             gameService.registerPlayer(room.getRoomId(), session.getPlayerId(), session.getUsername());
-            Optional<Question> questionOpt = gameService.getCurrentQuestion(room.getRoomId());
-            questionOpt.ifPresent(question -> session.send(Message.event(MessageType.QUESTION, question)));
+            if (!startedDefaultQuiz) {
+                sendCurrentQuestion(session, room.getRoomId());
+            }
         }
     }
 
@@ -233,6 +280,7 @@ public class DefaultServerMessageDispatcher implements ServerMessageDispatcher {
         roomService.leaveRoom(roomId, session.getPlayerId());
         gameService.markDisconnected(roomId, session.getPlayerId());
         session.setCurrentRoomId(null);
+        cleanupTerminatedRoom(roomId);
 
         session.send(Message.request(MessageType.ROOM_LEFT, message.getRequestId(), Map.of(
                 "roomId", roomId,
@@ -241,6 +289,7 @@ public class DefaultServerMessageDispatcher implements ServerMessageDispatcher {
 
         // Broadcast updated room state to remaining participants
         broadcastRoomState(roomId);
+        advanceIfAllConnectedPlayersAnswered(roomId);
     }
 
     private void handleAnswer(ClientSession session, Message message) {
@@ -254,6 +303,12 @@ public class DefaultServerMessageDispatcher implements ServerMessageDispatcher {
             return;
         }
 
+        synchronized (roomLifecycleLock(roomId)) {
+            handleAnswerInRoom(session, message, roomId);
+        }
+    }
+
+    private void handleAnswerInRoom(ClientSession session, Message message, String roomId) {
         JsonNode payload = message.getPayload();
         if (payload == null || !payload.has("questionId") || !payload.has("selectedOptionIndex")) {
             session.send(Message.error(message.getRequestId(), "BAD_PAYLOAD", "Missing questionId or selectedOptionIndex"));
@@ -271,7 +326,15 @@ public class DefaultServerMessageDispatcher implements ServerMessageDispatcher {
             outcome = new AnswerOutcome(questionId, false, false, 0,
                     gameService.getPlayerScore(roomId, session.getPlayerId()), ScoreManager.RejectReason.WRONG_ROOM);
         } else {
-            outcome = gameService.submitAnswerDetailed(roomId, session.getPlayerId(), questionId, selectedOptionIndex);
+            ActiveQuestionTimer timer = questionTimers.get(roomKey(roomId));
+            long deadlineMillis = timer != null && timer.questionId.equals(questionId)
+                    ? timer.deadlineMillis
+                    : 0;
+            if (deadlineMillis > 0 && System.currentTimeMillis() >= deadlineMillis) {
+                closeQuestionAndBroadcast(roomId, questionId, timer);
+            }
+            outcome = gameService.submitAnswerDetailed(
+                    roomId, session.getPlayerId(), questionId, selectedOptionIndex, deadlineMillis);
         }
 
         Map<String, Object> resultPayload = new LinkedHashMap<>();
@@ -284,6 +347,9 @@ public class DefaultServerMessageDispatcher implements ServerMessageDispatcher {
         resultPayload.put("pointsAwarded", outcome.pointsAwarded());
         resultPayload.put("currentTotalScore", outcome.totalScore());
         session.send(Message.request(MessageType.ANSWER_RESULT, message.getRequestId(), resultPayload));
+        if (outcome.accepted()) {
+            advanceIfAllConnectedPlayersAnswered(roomId);
+        }
     }
 
     private void handleStartQuiz(ClientSession session, Message message) {
@@ -308,18 +374,16 @@ public class DefaultServerMessageDispatcher implements ServerMessageDispatcher {
         roomService.findRoomById(roomId).ifPresent(room ->
                 room.getPlayers().forEach(p -> participants.put(p.getPlayerId(), p.getUsername())));
 
-        Optional<Question> firstQ = gameService.startQuiz(roomId, category, participants);
-        firstQ.ifPresent(q -> broadcastToRoom(roomId, Message.event(MessageType.QUESTION, q)));
+        synchronized (roomLifecycleLock(roomId)) {
+            cancelQuestionTimer(roomId);
+            Optional<Question> firstQ = gameService.startQuiz(roomId, category, participants);
+            firstQ.ifPresent(q -> scheduleAndBroadcastQuestion(roomId, q));
+        }
     }
 
     /**
-     * Host "next" action. The first press on an open question closes it (QUESTION_CLOSED + LEADERBOARD);
-     * the next press advances to the following question. Closing the last question also finishes
-     * the quiz (QUIZ_FINISHED).
-     *
-     * <p>Member 3 timer will call closeQuestion() here: when Member 3's ScheduledExecutorService
-     * deadline fires it should call {@link #closeQuestionAndBroadcast(String, String)}; the host's
-     * next press then simply advances.</p>
+     * Legacy protocol command retained for older clients. Quiz progression is server-controlled;
+     * hosts cannot close or advance a question manually.
      */
     private void handleNextQuestion(ClientSession session, Message message) {
         String roomId = session.getCurrentRoomId();
@@ -331,70 +395,157 @@ public class DefaultServerMessageDispatcher implements ServerMessageDispatcher {
             session.send(Message.error(message.getRequestId(), "FORBIDDEN", "Only the room host can advance the quiz"));
             return;
         }
-
-        JsonNode payload = message.getPayload();
-        String questionId = payload != null && payload.hasNonNull("questionId")
-                ? payload.get("questionId").asText()
-                : gameService.getCurrentQuestion(roomId).map(Question::getQuestionId).orElse(null);
-        if (questionId == null) {
-            session.send(Message.error(message.getRequestId(), "NO_ACTIVE_QUESTION", "No question is active in this room"));
-            return;
-        }
-
-        if (closeQuestionAndBroadcast(roomId, questionId)) {
-            return; // step 1: question closed and leaderboard shown
-        }
-
-        // Already closed (earlier press or a timer): move on exactly once
-        Advance advance = gameService.advanceAfter(roomId, questionId);
-        if (!advance.advanced()) {
-            session.send(Message.error(message.getRequestId(), "STALE_QUESTION",
-                    "Question " + questionId + " is no longer current"));
-            return;
-        }
-        if (advance.nextQuestion() != null) {
-            broadcastToRoom(roomId, Message.event(MessageType.QUESTION, advance.nextQuestion()));
-        } else if (advance.finished()) {
-            broadcastQuizFinished(roomId);
-        }
+        session.send(Message.error(message.getRequestId(), "AUTOMATIC_PROGRESS",
+                "Questions close and advance automatically when all players answer or the timer expires"));
     }
 
     /**
      * Closes the room's current question if it is {@code questionId}, then broadcasts QUESTION_CLOSED
      * and LEADERBOARD. If it was the last question it also finishes the quiz and broadcasts
-     * QUIZ_FINISHED. Safe to call from any thread (e.g. a Member 3 timer); only the caller that
-     * actually closes the question broadcasts.
+     * QUIZ_FINISHED. Safe to call from any thread (including the server deadline scheduler); only the
+     * caller that actually closes the question broadcasts.
      *
      * @return true if this call closed the question
      */
     public boolean closeQuestionAndBroadcast(String roomId, String questionId) {
-        Optional<Question> closed = gameService.closeCurrentQuestion(roomId, questionId);
-        if (closed.isEmpty()) {
+        ActiveQuestionTimer timer = questionTimers.get(roomKey(roomId));
+        return timer != null && timer.questionId.equals(questionId)
+                && closeQuestionAndBroadcast(roomId, questionId, timer);
+    }
+
+    private boolean closeQuestionAndBroadcast(String roomId, String questionId, ActiveQuestionTimer expectedTimer) {
+        synchronized (roomLifecycleLock(roomId)) {
+            if (questionTimers.get(roomKey(roomId)) != expectedTimer
+                    || !expectedTimer.questionId.equals(questionId)) {
+                return false;
+            }
+            Optional<Question> closed = gameService.closeCurrentQuestion(roomId, questionId);
+            if (closed.isEmpty()) {
+                return false;
+            }
+            completeQuestionAndAdvance(roomId, closed.get(), expectedTimer);
+            return true;
+        }
+    }
+
+    private boolean closeQuestionIfAllAnsweredAndBroadcast(String roomId, String questionId) {
+        ActiveQuestionTimer timer = questionTimers.get(roomKey(roomId));
+        if (timer == null || !timer.questionId.equals(questionId)) {
             return false;
         }
-        Question q = closed.get();
+        synchronized (roomLifecycleLock(roomId)) {
+            if (questionTimers.get(roomKey(roomId)) != timer) {
+                return false;
+            }
+            Optional<Question> closed = gameService.closeCurrentQuestionIfAllAnswered(roomId, questionId);
+            if (closed.isEmpty()) {
+                return false;
+            }
+            completeQuestionAndAdvance(roomId, closed.get(), timer);
+            return true;
+        }
+    }
+
+    private void completeQuestionAndAdvance(String roomId, Question closed, ActiveQuestionTimer timer) {
+        questionTimers.remove(roomKey(roomId), timer);
+        timer.cancel();
+
         int number = gameService.getQuestionNumber(roomId);
         int total = gameService.getTotalQuestions(roomId);
         boolean last = number >= total;
 
         Map<String, Object> closedPayload = new LinkedHashMap<>();
         closedPayload.put("roomId", roomId);
-        closedPayload.put("questionId", q.getQuestionId());
-        closedPayload.put("correctOptionIndex", q.getCorrectOptionIndex());
+        closedPayload.put("questionId", closed.getQuestionId());
+        closedPayload.put("correctOptionIndex", closed.getCorrectOptionIndex());
         closedPayload.put("questionNumber", number);
         closedPayload.put("totalQuestions", total);
         closedPayload.put("lastQuestion", last);
         broadcastToRoom(roomId, Message.event(MessageType.QUESTION_CLOSED, closedPayload));
-
         broadcastLeaderboard(roomId, last);
 
-        if (last) {
-            Advance done = gameService.advanceAfter(roomId, q.getQuestionId());
-            if (done.finished()) {
-                broadcastQuizFinished(roomId);
+        Advance advance = gameService.advanceAfter(roomId, closed.getQuestionId());
+        if (advance.nextQuestion() != null) {
+            scheduleAndBroadcastQuestion(roomId, advance.nextQuestion());
+        } else if (advance.finished()) {
+            broadcastQuizFinished(roomId);
+        } else {
+            log.warn("Question {} in room {} closed without an advance", closed.getQuestionId(), roomId);
+        }
+    }
+
+    private void advanceIfAllConnectedPlayersAnswered(String roomId) {
+        gameService.getCurrentQuestion(roomId)
+                .ifPresent(question -> closeQuestionIfAllAnsweredAndBroadcast(roomId, question.getQuestionId()));
+    }
+
+    private void scheduleAndBroadcastQuestion(String roomId, Question question) {
+        long startTimeMillis = System.currentTimeMillis();
+        long deadlineMillis = startTimeMillis + question.getTimeLimitSeconds() * 1000L;
+        int questionNumber = gameService.getQuestionNumber(roomId);
+        int totalQuestions = gameService.getTotalQuestions(roomId);
+        Question timedQuestion = question.forClient(questionNumber, totalQuestions, startTimeMillis, deadlineMillis);
+        ActiveQuestionTimer timer = new ActiveQuestionTimer(
+                question.getQuestionId(), timedQuestion, deadlineMillis);
+        ActiveQuestionTimer previous = questionTimers.put(roomKey(roomId), timer);
+        if (previous != null) {
+            previous.cancel();
+        }
+
+        long delayMillis = Math.max(0, deadlineMillis - System.currentTimeMillis());
+        timer.future = questionScheduler.schedule(
+                () -> closeQuestionAndBroadcast(roomId, question.getQuestionId(), timer),
+                delayMillis,
+                TimeUnit.MILLISECONDS);
+        broadcastToRoom(roomId, Message.event(MessageType.QUESTION, timedQuestion));
+    }
+
+    private void sendCurrentQuestion(ClientSession session, String roomId) {
+        gameService.getCurrentQuestion(roomId).ifPresent(question -> {
+            ActiveQuestionTimer timer = questionTimers.get(roomKey(roomId));
+            if (timer != null
+                    && timer.questionId.equals(question.getQuestionId())
+                    && question.getQuestionId().equals(gameService.getScoreManager().getOpenQuestionId(roomId))) {
+                session.send(Message.event(MessageType.QUESTION, timer.question));
+            }
+        });
+    }
+
+    private void cancelQuestionTimer(String roomId) {
+        ActiveQuestionTimer timer = questionTimers.remove(roomKey(roomId));
+        if (timer != null) {
+            timer.cancel();
+        }
+    }
+
+    private void cleanupTerminatedRoom(String roomId) {
+        boolean empty = roomService.findRoomById(roomId)
+                .map(room -> room.getPlayers().isEmpty())
+                .orElse(true);
+        if (empty) {
+            synchronized (roomLifecycleLock(roomId)) {
+                cancelQuestionTimer(roomId);
+                gameService.removeRoom(roomId);
             }
         }
-        return true;
+    }
+
+    private void handlePreviousRoomDeparture(ClientSession session, String previousRoomId, String currentRoomId) {
+        if (previousRoomId == null || previousRoomId.equalsIgnoreCase(currentRoomId)) {
+            return;
+        }
+        gameService.markDisconnected(previousRoomId, session.getPlayerId());
+        cleanupTerminatedRoom(previousRoomId);
+        broadcastRoomState(previousRoomId);
+        advanceIfAllConnectedPlayersAnswered(previousRoomId);
+    }
+
+    private Object roomLifecycleLock(String roomId) {
+        return roomLifecycleLocks.computeIfAbsent(roomKey(roomId), ignored -> new Object());
+    }
+
+    private static String roomKey(String roomId) {
+        return roomId == null ? "" : roomId.toUpperCase(Locale.ROOT);
     }
 
     /** Broadcasts a consistent LEADERBOARD snapshot to everyone in the room. */
@@ -511,9 +662,19 @@ public class DefaultServerMessageDispatcher implements ServerMessageDispatcher {
             roomService.leaveRoom(roomId, session.getPlayerId());
             // Keep the score but show the player as disconnected on the leaderboard
             gameService.markDisconnected(roomId, session.getPlayerId());
+            cleanupTerminatedRoom(roomId);
             broadcastRoomState(roomId);
+            advanceIfAllConnectedPlayersAnswered(roomId);
         }
         log.info("Session disconnected: id={}", session.getSessionId());
+    }
+
+    @Override
+    public void close() {
+        questionTimers.values().forEach(ActiveQuestionTimer::cancel);
+        questionTimers.clear();
+        questionScheduler.shutdownNow();
+        roomLifecycleLocks.clear();
     }
 
     public QuizRoomService getRoomService() {

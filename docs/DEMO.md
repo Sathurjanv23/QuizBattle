@@ -52,18 +52,23 @@ Member 4 can run discovery while Member 1 is talking if time is short; both only
 
 1. **Connect:** five clients named `Alice`, `Bob`, `Charlie`, `Diana`, `Evan` connect to `127.0.0.1:5000` (or through LAN discovery).
 2. **Room:** Alice clicks **Create Multiplayer Room** and then **Enter Multiplayer Lobby**. The others click **Join Room by Code** and enter the code. The roster shows `Players: 5`.
-3. **Start:** Alice clicks **Start Quiz**, chooses **Java**, and starts. Every client shows question 1 with `Points: 10`.
-4. **Answer:** each player clicks an option and gets an immediate server verdict:
+3. **Start:** Alice clicks **Start Quiz**, chooses **Java**, and starts. Every client shows question 1 of 10,
+   a synchronized 20-second countdown, and `Points: 10`.
+4. **Answer:** each player clicks one of the four options and gets an immediate server verdict:
    - `✓ Correct! +10 points. Total Score: 10 pts`, or `✗ Incorrect choice`.
-   - The options lock after one click. Even a hand-crafted second answer comes back as `Answer not counted: you already answered this question` (`DUPLICATE`).
-5. **Close:** only Alice sees **End Question ➔ Leaderboard**. Clicking it reveals the correct option in green on every client, then switches everyone to the **Live Leaderboard**: rank, medal, username, correct count, score, with your own row highlighted. Ties share a rank, ordered by username.
-6. **Late answer:** a player who hadn't answered sees `⌛ Question closed before you answered.` Any answer now is rejected as `LATE`.
-7. **Disconnect:** close Diana's window after question 2. Her row stays on the next leaderboard with her points and a red `DISCONNECTED` badge.
-8. **Next:** Alice clicks **Next Question ➔** on the leaderboard. Repeat for all 5 questions.
-9. **Finish:** closing question 5 sends everyone to **Final Results**: winner banner (or tie banner), your rank/score/correct count, and the full standings.
+   - The options lock after one click. Even a second answer comes back as `DUPLICATE`.
+5. **Automatic close and advance:** when all connected players answer, the server closes the question,
+   reveals the correct option, and starts the next question automatically. If a player has not answered,
+   the server waits until the 20-second deadline; late answers are rejected as `LATE`.
+6. **Disconnect:** close Diana's window after question 2. Her score remains in the final standings and
+   she is excluded from the all-answered check for subsequent questions.
+7. **Repeat:** the countdown resets for each of the ten questions. No player or host presses a Next button.
+8. **Finish:** after question 10 closes, every connected client navigates automatically to **Final Results**:
+   winner banner (or tie banner), your rank/score/correct count, and the full standings.
 10. **Personal Summary:** click **My Summary** to see rank, score, correct/total, accuracy and a question-by-question list. **Leave Room** returns to the dashboard. Alice also has **Play Again**.
 
-Quick play still works: **Quick Play** on the dashboard joins `room-default`, where any player may end or advance questions.
+Quick play still works: **Quick Play** on the dashboard joins `room-default`; server-owned timing and
+automatic progression work the same way there. Separate rooms maintain independent deadlines.
 
 ---
 
@@ -75,15 +80,16 @@ mvn -B clean test
 
 | Suite | Tests | What it proves |
 |---|---|---|
-| `ScoreManagerTest` | 81 (incl. repeated runs) | 10-point rule, DUPLICATE, LATE, WRONG_ROOM, NO_ACTIVE_QUIZ, tie order and ranks, disconnected keeps score; **64-thread latch race → exactly 1 accepted** (×20), multi-player totals (×10), answers vs close (×20), concurrent close idempotent (×20) |
+| `ScoreManagerTest` | 83 (incl. repeated runs) | 10-point rule, DUPLICATE, LATE, WRONG_ROOM, NO_ACTIVE_QUIZ, tie order and ranks, disconnected keeps score; deadline enforcement and all-connected close; **64-thread latch race → exactly 1 accepted** (×20), multi-player totals (×10), answers vs close (×20), concurrent close idempotent (×20) |
 | `RaceConditionDemoTest` | 10 | Demo's safe path with 100 workers always gives 1 accepted, score 10 |
 | `QuizProgressionTest` | 3 | Close-then-advance moves exactly once, stale advance ignored, quiz finishes, scoring delegated |
-| `FiveClientScoredQuizTest` | 1 | Full 5-client, 5-question quiz over NIO: FORBIDDEN for non-host next, DUPLICATE, WRONG_ROOM, LATE, STALE_QUESTION, disconnect keeps score, final ranking `Alice 50, Bob 30, Diana 20 (disconnected), Evan 10, Charlie 0` |
+| `FiveClientScoredQuizTest` | 1 | Full 5-client, 10-question quiz over NIO: shared deadlines, auto-advance after all answers, DUPLICATE, WRONG_ROOM, LATE, disconnect keeps score, final ranking |
+| `QuestionTimerIntegrationTest` | 1 | Two independent rooms time out and automatically advance through quiz completion |
 | `NioMultiplayerIntegrationTest` | 17 | NIO startup, five clients, rooms, isolation, fragmentation, partial writes, disconnects, host migration, quiz regression, graceful shutdown |
 | `FiveClientDemonstrationTest` | 1 | Original 13-step lobby demonstration |
 | `TcpQuizIntegrationTest` | 2 | Blocking-server quiz round and unauthorized answer |
 | `UdpDiscoveryTest` | 5 | UDP discovery protocol, responder, client |
 | `ModelSmokeTest`, `MessageCodecTest` | 4 + 7 | Models, masking, framing, 64 KiB cap |
-| **Total** | **131** | |
+| **Total** | **134** | |
 
 Race demo with custom size: `mvn -q compile exec:java "-Dexec.mainClass=com.quizbattle.server.sync.RaceConditionDemo" "-Dexec.args=100 10"` (threads, rounds).

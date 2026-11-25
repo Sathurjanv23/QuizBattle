@@ -91,6 +91,28 @@ class ScoreManagerTest {
     }
 
     @Test
+    @DisplayName("An answer past its server deadline is rejected even before the close task runs")
+    void deadlineRejectsBeforeScheduledClose() {
+        long expiredDeadline = System.currentTimeMillis() - 1;
+        AnswerOutcome outcome = sm.submitAnswer(ROOM, "p1", "q1", true, expiredDeadline);
+        assertEquals(RejectReason.LATE, outcome.rejectReason());
+        assertEquals(0, sm.getScore(ROOM, "p1"));
+    }
+
+    @Test
+    @DisplayName("All-connected-answers close is atomic and waits for every connected player")
+    void closesWhenEveryConnectedPlayerAnswered() {
+        assertFalse(sm.closeQuestionIfAllConnectedAnswered(ROOM, "q1"));
+        assertTrue(sm.submitAnswer(ROOM, "p1", "q1", true).accepted());
+        assertFalse(sm.closeQuestionIfAllConnectedAnswered(ROOM, "q1"));
+
+        sm.markDisconnected(ROOM, "p2");
+        assertTrue(sm.closeQuestionIfAllConnectedAnswered(ROOM, "q1"));
+        assertFalse(sm.closeQuestionIfAllConnectedAnswered(ROOM, "q1"));
+        assertEquals(RejectReason.LATE, sm.submitAnswer(ROOM, "p1", "q1", true).rejectReason());
+    }
+
+    @Test
     @DisplayName("A closed question cannot be reopened")
     void closedQuestionCannotReopen() {
         sm.closeQuestion(ROOM, "q1");

@@ -63,5 +63,70 @@
     "correctOptionIndex": 0,
     "timeLimitSeconds": 20,
     "pointValue": 100
+  },
+  {
+    "questionId": "q-106",
+    "text": "Which Java collection preserves insertion order while enforcing unique keys?",
+    "options": [
+      "HashMap",
+      "LinkedHashMap",
+      "TreeSet",
+      "ArrayList"
+    ],
+    "correctOptionIndex": 1,
+    "timeLimitSeconds": 20,
+    "pointValue": 100
+  },
+  {
+    "questionId": "q-107",
+    "text": "Which protocol message indicates that a quiz question is no longer accepting answers?",
+    "options": [
+      "QUESTION_CLOSED",
+      "ROOM_STATE",
+      "ANSWER_RESULT",
+      "CONNECTED"
+    ],
+    "correctOptionIndex": 0,
+    "timeLimitSeconds": 20,
+    "pointValue": 100
+  },
+  {
+    "questionId": "q-108",
+    "text": "What does a Java ScheduledExecutorService do?",
+    "options": [
+      "Schedules tasks to run after a delay or at intervals",
+      "Creates JavaFX scenes",
+      "Encodes JSON messages",
+      "Accepts TCP connections"
+    ],
+    "correctOptionIndex": 0,
+    "timeLimitSeconds": 20,
+    "pointValue": 100
+  },
+  {
+    "questionId": "q-109",
+    "text": "Which JavaFX class is suitable for repeating a UI update on the JavaFX Application Thread?",
+    "options": [
+      "Timeline",
+      "ServerSocket",
+      "ObjectMapper",
+      "ReentrantLock"
+    ],
+    "correctOptionIndex": 0,
+    "timeLimitSeconds": 20,
+    "pointValue": 100
+  },
+  {
+    "questionId": "q-110",
+    "text": "What does HTTP status code 404 mean?",
+    "options": [
+      "The requested resource was not found",
+      "The request succeeded",
+      "The server is temporarily unavailable",
+      "The client is unauthorized"
+    ],
+    "correctOptionIndex": 0,
+    "timeLimitSeconds": 20,
+    "pointValue": 100
   }
 ]

@@ -404,6 +404,7 @@ public class NioQuizServer implements QuizServer {
             }
         }
 
+        dispatcher.close();
         log.info("NioQuizServer stopped successfully.");
     }
 

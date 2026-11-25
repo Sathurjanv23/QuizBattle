@@ -11,7 +11,7 @@ import java.util.function.BiConsumer;
  * <p>Decouples network socket handling (blocking I/O or NIO) from message routing
  * and business domain processing.</p>
  */
-public interface ServerMessageDispatcher {
+public interface ServerMessageDispatcher extends AutoCloseable {
 
     /**
      * Routes an inbound message from a client session to the registered handler.
@@ -35,4 +35,8 @@ public interface ServerMessageDispatcher {
      * Called when a client session disconnects from the server.
      */
     void onSessionDisconnected(ClientSession session);
+
+    @Override
+    default void close() {
+    }
 }
