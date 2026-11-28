@@ -11,9 +11,9 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
 /**
- * Screen 1: Host / Player Dashboard View.
- * Displays player identity, connection status, room creation trigger,
- * join room navigation, quick play, and error feedback.
+ * Screen 4: Host / Player Dashboard View.
+ * Displays player identity, connection info, and two large interactive battle action cards
+ * (Create a Battle vs Join a Battle) plus instant Quick Play.
  */
 public class HostDashboardView extends VBox {
 
@@ -41,10 +41,10 @@ public class HostDashboardView extends VBox {
         this.playerId = playerId;
         this.hostPort = hostPort;
 
-        getStyleClass().add("welcome-card");
-        setAlignment(Pos.CENTER);
-        setMaxWidth(560);
-        setPadding(new Insets(28));
+        getStyleClass().addAll("welcome-card", "hero-card");
+        setAlignment(Pos.TOP_CENTER);
+        setMaxWidth(680);
+        setPadding(new Insets(24, 32, 28, 32));
 
         // 1. Top Header & Identity Bar
         HBox topBar = new HBox(12);
@@ -71,16 +71,19 @@ public class HostDashboardView extends VBox {
 
         topBar.getChildren().addAll(playerLabel, connectionBadge, spacer, disconnectButton);
 
-        // 2. Dashboard Card Titles
-        Label heading = new Label("Multiplayer Battle Dashboard");
+        // 2. Dashboard Titles
+        Label heading = new Label("Multiplayer Battle Arena");
         heading.getStyleClass().add("card-heading");
 
-        Label subtitle = new Label("Create a private room or enter an existing battle room code");
+        Label subtitle = new Label("Host your own private tournament or join a friend's room code");
         subtitle.getStyleClass().add("card-subtitle");
+
+        VBox titleBox = new VBox(4, heading, subtitle);
+        titleBox.setAlignment(Pos.CENTER);
 
         // 3. Status & Error Feedback Banner
         progressSpinner = new ProgressIndicator();
-        progressSpinner.setPrefSize(20, 20);
+        progressSpinner.setPrefSize(18, 18);
         progressSpinner.setVisible(false);
         progressSpinner.setManaged(false);
 
@@ -93,81 +96,116 @@ public class HostDashboardView extends VBox {
         HBox statusRow = new HBox(10, progressSpinner, statusFeedbackLabel);
         statusRow.setAlignment(Pos.CENTER);
 
-        // 4. Action Buttons
-        createRoomButton = new Button("🎮 Create Multiplayer Room");
+        // 4. Two Large Action Cards: CREATE A BATTLE vs JOIN A BATTLE
+        HBox actionCardsBox = new HBox(18);
+        actionCardsBox.setAlignment(Pos.CENTER);
+
+        // Card A: Create Room
+        VBox createCard = new VBox(12);
+        createCard.getStyleClass().add("battle-action-card");
+        createCard.setAlignment(Pos.CENTER);
+        HBox.setHgrow(createCard, Priority.ALWAYS);
+
+        Label createIcon = new Label("👑");
+        createIcon.setStyle("-fx-font-size: 32px;");
+
+        Label createTitle = new Label("CREATE A BATTLE");
+        createTitle.setStyle("-fx-font-size: 16px; -fx-font-weight: bold; -fx-text-fill: #F8FAFC;");
+
+        Label createDesc = new Label("Host a private multiplayer quiz, pick categories, and invite friends.");
+        createDesc.getStyleClass().add("card-subtitle");
+        createDesc.setTextAlignment(javafx.scene.text.TextAlignment.CENTER);
+        createDesc.setWrapText(true);
+        createDesc.setPrefHeight(42);
+
+        createRoomButton = new Button("Host New Room ➔");
         createRoomButton.getStyleClass().add("primary-button");
         createRoomButton.setMaxWidth(Double.MAX_VALUE);
         createRoomButton.setOnAction(e -> {
-            setLoading(true, "Requesting server to create a new multiplayer room...");
+            setLoading(true);
+            clearError();
             if (onCreateRoomRequested != null) {
                 onCreateRoomRequested.run();
             }
         });
 
-        joinRoomButton = new Button("🚪 Join Room by Code");
-        joinRoomButton.getStyleClass().add("secondary-button");
+        createCard.getChildren().addAll(createIcon, createTitle, createDesc, createRoomButton);
+
+        // Card B: Join Room
+        VBox joinCard = new VBox(12);
+        joinCard.getStyleClass().add("battle-action-card");
+        joinCard.setAlignment(Pos.CENTER);
+        HBox.setHgrow(joinCard, Priority.ALWAYS);
+
+        Label joinIcon = new Label("🎯");
+        joinIcon.setStyle("-fx-font-size: 32px;");
+
+        Label joinTitle = new Label("JOIN A BATTLE");
+        joinTitle.setStyle("-fx-font-size: 16px; -fx-font-weight: bold; -fx-text-fill: #F8FAFC;");
+
+        Label joinDesc = new Label("Enter a 6-character room code to join an existing game lobby.");
+        joinDesc.getStyleClass().add("card-subtitle");
+        joinDesc.setTextAlignment(javafx.scene.text.TextAlignment.CENTER);
+        joinDesc.setWrapText(true);
+        joinDesc.setPrefHeight(42);
+
+        joinRoomButton = new Button("Enter Room Code ➔");
+        joinRoomButton.getStyleClass().add("purple-button");
         joinRoomButton.setMaxWidth(Double.MAX_VALUE);
         joinRoomButton.setOnAction(e -> {
+            clearError();
             if (onJoinRoomNavigationRequested != null) {
                 onJoinRoomNavigationRequested.run();
             }
         });
 
-        quickPlayButton = new Button("🎯 Quick Play (Default Room)");
+        joinCard.getChildren().addAll(joinIcon, joinTitle, joinDesc, joinRoomButton);
+
+        actionCardsBox.getChildren().addAll(createCard, joinCard);
+
+        // 5. Quick Play & Practice Action (Centered below cards)
+        VBox quickPlayBox = new VBox(8);
+        quickPlayBox.setAlignment(Pos.CENTER);
+        quickPlayBox.setPadding(new Insets(10, 0, 0, 0));
+
+        quickPlayButton = new Button("⚡ Quick Play (Practice Arena)");
         quickPlayButton.getStyleClass().add("secondary-button");
-        quickPlayButton.setMaxWidth(Double.MAX_VALUE);
+        quickPlayButton.setMaxWidth(380);
+        quickPlayButton.setStyle("-fx-font-size: 13px; -fx-padding: 10px 20px;");
         quickPlayButton.setOnAction(e -> {
+            setLoading(true);
+            clearError();
             if (onQuickPlayRequested != null) {
                 onQuickPlayRequested.run();
             }
         });
 
-        VBox buttonBox = new VBox(12, createRoomButton, joinRoomButton, quickPlayButton);
-        buttonBox.setAlignment(Pos.CENTER);
-        buttonBox.setMaxWidth(420);
+        Label quickPlayHint = new Label("Instantly play trivia in the default community room without waiting for a lobby.");
+        quickPlayHint.setStyle("-fx-font-size: 11px; -fx-text-fill: #64748B;");
 
-        getChildren().addAll(
-                topBar,
-                heading,
-                subtitle,
-                statusRow,
-                buttonBox
-        );
+        quickPlayBox.getChildren().addAll(quickPlayButton, quickPlayHint);
+
+        getChildren().addAll(topBar, titleBox, statusRow, actionCardsBox, quickPlayBox);
     }
 
-    public void showError(String errorMessage) {
-        setLoading(false, null);
-        statusFeedbackLabel.setText("⚠️ " + errorMessage);
-        statusFeedbackLabel.setVisible(true);
-        statusFeedbackLabel.setManaged(true);
-    }
-
-    public void clearError() {
-        statusFeedbackLabel.setText("");
-        statusFeedbackLabel.setVisible(false);
-        statusFeedbackLabel.setManaged(false);
-    }
-
-    public void setLoading(boolean loading, String message) {
+    public void setLoading(boolean loading) {
         progressSpinner.setVisible(loading);
         progressSpinner.setManaged(loading);
         createRoomButton.setDisable(loading);
         joinRoomButton.setDisable(loading);
         quickPlayButton.setDisable(loading);
-        if (loading && message != null) {
-            statusFeedbackLabel.setText("⏳ " + message);
-            statusFeedbackLabel.setVisible(true);
-            statusFeedbackLabel.setManaged(true);
-        } else if (!loading) {
-            clearError();
-        }
     }
 
-    public String getUsername() {
-        return username;
+    public void showError(String message) {
+        setLoading(false);
+        statusFeedbackLabel.setText("⚠ " + message);
+        statusFeedbackLabel.setVisible(true);
+        statusFeedbackLabel.setManaged(true);
     }
 
-    public String getPlayerId() {
-        return playerId;
+    public void clearError() {
+        statusFeedbackLabel.setVisible(false);
+        statusFeedbackLabel.setManaged(false);
+        statusFeedbackLabel.setText("");
     }
 }

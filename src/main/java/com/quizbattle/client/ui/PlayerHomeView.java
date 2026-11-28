@@ -64,10 +64,10 @@ public class PlayerHomeView extends VBox {
         this.playerId = playerId;
         this.hostPort = hostPort;
 
-        getStyleClass().add("player-home-container");
+        getStyleClass().addAll("welcome-card", "hero-card");
         setAlignment(Pos.TOP_CENTER);
-        setMaxWidth(700);
-        setPadding(new Insets(20));
+        setMaxWidth(760);
+        setPadding(new Insets(20, 28, 24, 28));
 
         // 1. Top Player & Connection Bar
         HBox topBar = new HBox(12);
@@ -122,7 +122,7 @@ public class PlayerHomeView extends VBox {
 
         // 3. Quiz Section (hidden until room joined)
         quizSection = new VBox(16);
-        quizSection.getStyleClass().add("welcome-card");
+        quizSection.getStyleClass().addAll("welcome-card", "battle-action-card");
         quizSection.setAlignment(Pos.TOP_LEFT);
         quizSection.setPadding(new Insets(24));
         quizSection.setVisible(false);
@@ -254,8 +254,13 @@ public class PlayerHomeView extends VBox {
         long remainingMillis = Math.max(0, deadlineMillis - System.currentTimeMillis());
         int remainingSeconds = (int) Math.ceil(remainingMillis / 1000.0);
         int totalSeconds = Math.max(1, currentQuestion != null ? currentQuestion.getTimeLimitSeconds() : 1);
-        timerLabel.setText(remainingSeconds > 0 ? "Time left: " + remainingSeconds + "s" : "Time's up");
+        timerLabel.setText(remainingSeconds > 0 ? "⏱ Time: " + remainingSeconds + "s" : "⌛ Time's up");
         timerProgressBar.setProgress(Math.min(1, remainingMillis / (totalSeconds * 1000.0)));
+        if (remainingSeconds <= 5 && remainingSeconds > 0) {
+            timerLabel.setStyle("-fx-font-size: 16px; -fx-font-weight: bold; -fx-text-fill: #EF4444;");
+        } else {
+            timerLabel.setStyle("-fx-font-size: 16px; -fx-font-weight: bold; -fx-text-fill: #FBBF24;");
+        }
         if (remainingMillis == 0) {
             if (countdownTimeline != null) {
                 countdownTimeline.stop();

@@ -12,9 +12,9 @@ import javafx.scene.layout.VBox;
 import java.util.function.Consumer;
 
 /**
- * Screen 3: Join Room View.
- * Captures and validates user-entered room codes, presents loading and error states,
- * and initiates authoritative room join network requests.
+ * Screen 6: Join Room View.
+ * Captures and validates user-entered room codes with automatic uppercase formatting,
+ * responsive loading feedback, and server join initiation.
  */
 public class JoinRoomView extends VBox {
 
@@ -27,28 +27,41 @@ public class JoinRoomView extends VBox {
     @SuppressWarnings("this-escape")
     public JoinRoomView(String username, Consumer<String> onJoinRequested, Runnable onBackRequested) {
         super(18);
-        getStyleClass().add("welcome-card");
+        getStyleClass().addAll("welcome-card", "hero-card");
         setAlignment(Pos.CENTER);
-        setMaxWidth(480);
-        setPadding(new Insets(32));
+        setMaxWidth(500);
+        setPadding(new Insets(32, 40, 36, 40));
 
-        Label heading = new Label("Join Multiplayer Room");
+        // 1. Heading & Greeting
+        Label icon = new Label("🎯");
+        icon.setStyle("-fx-font-size: 36px;");
+
+        Label heading = new Label("Join Battle Room");
         heading.getStyleClass().add("card-heading");
 
-        Label subtitle = new Label("Enter the 6-character room code shared by the host");
+        Label subtitle = new Label("Enter the 6-character room code shared by your battle host.");
         subtitle.getStyleClass().add("card-subtitle");
+        subtitle.setTextAlignment(javafx.scene.text.TextAlignment.CENTER);
+        subtitle.setWrapText(true);
 
         Label playerGreeting = new Label("Joining as: " + username);
         playerGreeting.getStyleClass().add("player-badge");
 
-        Label fieldLabel = new Label("Room Code:");
+        VBox headerBox = new VBox(6, icon, heading, playerGreeting, subtitle);
+        headerBox.setAlignment(Pos.CENTER);
+
+        // 2. Input Section
+        VBox inputSection = new VBox(8);
+        inputSection.setAlignment(Pos.CENTER);
+
+        Label fieldLabel = new Label("ROOM CODE");
         fieldLabel.getStyleClass().add("field-label");
 
         roomCodeField = new TextField();
         roomCodeField.setPromptText("e.g. QB42KD");
         roomCodeField.getStyleClass().add("input-field");
         roomCodeField.setAlignment(Pos.CENTER);
-        roomCodeField.setStyle("-fx-font-size: 16px; -fx-font-weight: bold; -fx-alignment: center;");
+        roomCodeField.setStyle("-fx-font-size: 20px; -fx-font-weight: bold; -fx-font-family: 'Consolas', monospace; -fx-alignment: center; -fx-padding: 10px 18px;");
 
         // Auto-uppercase text entry and trim
         roomCodeField.textProperty().addListener((obs, oldVal, newVal) -> {
@@ -63,6 +76,9 @@ public class JoinRoomView extends VBox {
             }
         });
 
+        inputSection.getChildren().addAll(fieldLabel, roomCodeField);
+
+        // 3. Status & Error Box
         errorLabel = new Label();
         errorLabel.getStyleClass().add("error-box");
         errorLabel.setWrapText(true);
@@ -70,16 +86,18 @@ public class JoinRoomView extends VBox {
         errorLabel.setManaged(false);
 
         progressSpinner = new ProgressIndicator();
-        progressSpinner.setPrefSize(20, 20);
+        progressSpinner.setPrefSize(18, 18);
         progressSpinner.setVisible(false);
         progressSpinner.setManaged(false);
 
         HBox statusRow = new HBox(8, progressSpinner, errorLabel);
         statusRow.setAlignment(Pos.CENTER);
 
-        joinButton = new Button("Join Room ➔");
+        // 4. Action Buttons
+        joinButton = new Button("Join Battle Room ➔");
         joinButton.getStyleClass().add("primary-button");
         joinButton.setMaxWidth(Double.MAX_VALUE);
+        joinButton.setStyle("-fx-font-size: 15px; -fx-padding: 13px 24px;");
 
         backButton = new Button("⬅ Back to Dashboard");
         backButton.getStyleClass().add("secondary-button");
@@ -92,7 +110,7 @@ public class JoinRoomView extends VBox {
                 return;
             }
             if (code.length() < 3) {
-                showError("Room code is too short.");
+                showError("Room code is too short (must be at least 3 characters).");
                 return;
             }
             clearError();
@@ -112,37 +130,27 @@ public class JoinRoomView extends VBox {
 
         VBox actions = new VBox(10, joinButton, backButton);
         actions.setAlignment(Pos.CENTER);
-        actions.setMaxWidth(380);
 
-        getChildren().addAll(
-                heading,
-                subtitle,
-                playerGreeting,
-                fieldLabel,
-                roomCodeField,
-                statusRow,
-                actions
-        );
-    }
-
-    public void showError(String errorMessage) {
-        setLoading(false);
-        errorLabel.setText("⚠️ " + errorMessage);
-        errorLabel.setVisible(true);
-        errorLabel.setManaged(true);
-    }
-
-    public void clearError() {
-        errorLabel.setText("");
-        errorLabel.setVisible(false);
-        errorLabel.setManaged(false);
+        getChildren().addAll(headerBox, inputSection, statusRow, actions);
     }
 
     public void setLoading(boolean loading) {
         progressSpinner.setVisible(loading);
         progressSpinner.setManaged(loading);
         joinButton.setDisable(loading);
-        backButton.setDisable(loading);
         roomCodeField.setDisable(loading);
+    }
+
+    public void showError(String message) {
+        setLoading(false);
+        errorLabel.setText("⚠ " + message);
+        errorLabel.setVisible(true);
+        errorLabel.setManaged(true);
+    }
+
+    public void clearError() {
+        errorLabel.setVisible(false);
+        errorLabel.setManaged(false);
+        errorLabel.setText("");
     }
 }

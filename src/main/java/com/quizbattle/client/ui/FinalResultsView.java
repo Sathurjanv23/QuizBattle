@@ -29,12 +29,12 @@ public class FinalResultsView extends VBox {
             Runnable onViewSummary,
             Runnable onPlayAgain,
             Runnable onLeave) {
-        super(14);
-        getStyleClass().add("welcome-card");
+        super(16);
+        getStyleClass().addAll("welcome-card", "hero-card");
         setAlignment(Pos.TOP_CENTER);
-        setMaxWidth(640);
+        setMaxWidth(720);
         setMaxHeight(Region.USE_PREF_SIZE);
-        setPadding(new Insets(24));
+        setPadding(new Insets(28, 32, 28, 32));
 
         Label title = new Label("🏁 Final Results");
         title.getStyleClass().add("card-heading");
