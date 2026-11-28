@@ -317,6 +317,13 @@
     -fx-opacity: 1;
 }
 
+.option-incorrect {
+    -fx-background-color: #7f1d1d;
+    -fx-border-color: #ef4444;
+    -fx-text-fill: #fecaca;
+    -fx-opacity: 1;
+}
+
 .leaderboard-scroll {
     -fx-background-color: transparent;
     -fx-background: transparent;

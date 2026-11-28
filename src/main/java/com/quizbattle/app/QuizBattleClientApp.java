@@ -298,6 +298,12 @@ public class QuizBattleClientApp extends Application {
             }
         });
 
+        // Member 5: LEADERBOARD -> log and track intermediate rankings
+        networkClient.registerListener(MessageType.LEADERBOARD, message -> {
+            JsonNode payload = message.getPayload();
+            log.info("Received LEADERBOARD snapshot: {}", payload);
+        });
+
         // Member 5: QUIZ_FINISHED -> final results
         networkClient.registerListener(MessageType.QUIZ_FINISHED, message -> {
             lastQuizFinished = message.getPayload();
