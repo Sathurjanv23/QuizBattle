@@ -17,7 +17,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Screen 4: Real-Time Multiplayer Lobby View.
+ * Screen 7: Real-Time Multiplayer Lobby View.
  * Displays live room state, host indicator, synchronized participant roster,
  * dynamic host controls (Start Quiz), and room exit actions.
  */
@@ -45,7 +45,6 @@ public class MultiplayerLobbyView extends VBox {
     private final Label startQuizHint;
     private final Label copyFeedback;
 
-    @SuppressWarnings("this-escape")
     public MultiplayerLobbyView(
             String roomCode,
             String roomName,
@@ -54,19 +53,38 @@ public class MultiplayerLobbyView extends VBox {
             String hostPort,
             Runnable onSelectCategoryRequested,
             Runnable onLeaveRoomRequested) {
-        super(16);
-        this.roomCode = roomCode;
+        this(roomCode, roomName, currentPlayerId, currentUsername, hostPort, null, onSelectCategoryRequested, onLeaveRoomRequested);
+    }
+
+    @SuppressWarnings("this-escape")
+    public MultiplayerLobbyView(
+            String roomCode,
+            String roomName,
+            String currentPlayerId,
+            String currentUsername,
+            String hostPort,
+            String initialHostPlayerId,
+            Runnable onSelectCategoryRequested,
+            Runnable onLeaveRoomRequested) {
+        super(18);
+        this.roomCode = roomCode != null ? roomCode : "QB0000";
         this.roomName = roomName != null ? roomName : "Multiplayer Battle Room";
         this.currentPlayerId = currentPlayerId;
         this.currentUsername = currentUsername;
         this.hostPort = hostPort;
+        this.hostPlayerId = initialHostPlayerId;
         this.onSelectCategoryRequested = onSelectCategoryRequested;
         this.onLeaveRoomRequested = onLeaveRoomRequested;
 
-        getStyleClass().add("player-home-container");
+        if (initialHostPlayerId != null && initialHostPlayerId.equals(currentPlayerId)) {
+            this.isHost = true;
+            this.hostUsername = currentUsername;
+        }
+
+        getStyleClass().addAll("welcome-card", "hero-card");
         setAlignment(Pos.TOP_CENTER);
         setMaxWidth(720);
-        setPadding(new Insets(20));
+        setPadding(new Insets(24, 30, 28, 30));
 
         // 1. Top Navigation & Status Bar
         HBox topBar = new HBox(12);
@@ -94,23 +112,24 @@ public class MultiplayerLobbyView extends VBox {
         topBar.getChildren().addAll(playerLabel, connectionBadge, spacer, leaveButton);
 
         // 2. Room Metadata Card
-        VBox metaCard = new VBox(10);
-        metaCard.getStyleClass().add("welcome-card");
-        metaCard.setPadding(new Insets(18, 24, 18, 24));
+        VBox metaCard = new VBox(12);
+        metaCard.getStyleClass().add("battle-action-card");
+        metaCard.setPadding(new Insets(20, 24, 20, 24));
         metaCard.setAlignment(Pos.CENTER);
 
         HBox codeRow = new HBox(12);
         codeRow.setAlignment(Pos.CENTER);
 
-        roomCodeBadge = new Label("ROOM CODE: " + roomCode);
+        roomCodeBadge = new Label("ROOM CODE: " + this.roomCode);
         roomCodeBadge.getStyleClass().add("room-badge");
-        roomCodeBadge.setStyle("-fx-font-size: 16px; -fx-padding: 6px 14px;");
+        roomCodeBadge.setStyle("-fx-font-size: 16px; -fx-padding: 6px 16px;");
 
         copyFeedback = new Label();
         copyFeedback.getStyleClass().add("status-label");
+        copyFeedback.setStyle("-fx-text-fill: #34D399; -fx-font-weight: bold;");
         copyFeedback.setVisible(false);
 
-        Button copyCodeBtn = new Button("📋 Copy");
+        Button copyCodeBtn = new Button("📋 Copy Code");
         copyCodeBtn.getStyleClass().add("secondary-button");
         copyCodeBtn.setOnAction(e -> {
             try {
@@ -129,13 +148,14 @@ public class MultiplayerLobbyView extends VBox {
         roomNameLabel = new Label(this.roomName);
         roomNameLabel.getStyleClass().add("card-heading");
 
-        HBox hostAndCountRow = new HBox(20);
+        HBox hostAndCountRow = new HBox(16);
         hostAndCountRow.setAlignment(Pos.CENTER);
 
-        hostStatusLabel = new Label("👑 Host: Loading...");
-        hostStatusLabel.getStyleClass().add("player-badge");
+        String initialHostText = isHost ? "👑 Host: " + currentUsername + " (You)" : (hostUsername != null ? "👑 Host: " + hostUsername : "👑 Host: Loading...");
+        hostStatusLabel = new Label(initialHostText);
+        hostStatusLabel.getStyleClass().add("host-crown-badge");
 
-        playerCountBadge = new Label("Players: 1");
+        playerCountBadge = new Label("👥 Players: 1");
         playerCountBadge.getStyleClass().add("score-badge");
 
         hostAndCountRow.getChildren().addAll(hostStatusLabel, playerCountBadge);
@@ -144,16 +164,16 @@ public class MultiplayerLobbyView extends VBox {
 
         // 3. Live Player Roster Section
         VBox rosterSection = new VBox(10);
-        rosterSection.getStyleClass().add("welcome-card");
-        rosterSection.setPadding(new Insets(20));
+        rosterSection.getStyleClass().add("battle-action-card");
+        rosterSection.setPadding(new Insets(16, 20, 16, 20));
         rosterSection.setAlignment(Pos.TOP_LEFT);
 
-        Label rosterTitle = new Label("Connected Players in Lobby");
+        Label rosterTitle = new Label("CONNECTED PLAYERS IN LOBBY");
         rosterTitle.getStyleClass().add("field-label");
 
         playerRosterBox = new VBox(8);
         playerRosterBox.setAlignment(Pos.TOP_CENTER);
-        playerRosterBox.setPadding(new Insets(8, 0, 8, 0));
+        playerRosterBox.setPadding(new Insets(4, 0, 4, 0));
 
         ScrollPane rosterScroll = new ScrollPane(playerRosterBox);
         rosterScroll.setFitToWidth(true);
@@ -165,27 +185,31 @@ public class MultiplayerLobbyView extends VBox {
         // 4. Host Action Section
         VBox actionSection = new VBox(10);
         actionSection.setAlignment(Pos.CENTER);
-        actionSection.setPadding(new Insets(12));
+        actionSection.setPadding(new Insets(8));
 
-        startQuizButton = new Button("Choose Quiz Category");
+        startQuizButton = new Button("Choose Quiz Category ➔");
         startQuizButton.getStyleClass().add("primary-button");
-        startQuizButton.setMaxWidth(360);
-        startQuizButton.setStyle("-fx-font-size: 15px; -fx-padding: 12px 24px;");
+        startQuizButton.setMaxWidth(380);
+        startQuizButton.setStyle("-fx-font-size: 15px; -fx-padding: 13px 28px;");
+        startQuizButton.setDisable(!isHost);
         startQuizButton.setOnAction(e -> {
             if (onSelectCategoryRequested != null) {
                 onSelectCategoryRequested.run();
             }
         });
 
-        startQuizHint = new Label("Waiting for host to start the quiz round...");
+        String initialHintText = isHost
+                ? "You are the host! Choose a quiz category to start the battle when all players are ready."
+                : "Waiting for the room host to start the quiz round...";
+        startQuizHint = new Label(initialHintText);
         startQuizHint.getStyleClass().add("card-subtitle");
 
         actionSection.getChildren().addAll(startQuizButton, startQuizHint);
 
         getChildren().addAll(topBar, metaCard, rosterSection, actionSection);
 
-        // Initial single-player placeholder
-        addPlayerRow(currentUsername, currentPlayerId, false);
+        // Initial player row
+        addPlayerRow(currentUsername, currentPlayerId, isHost);
     }
 
     /**
@@ -214,17 +238,22 @@ public class MultiplayerLobbyView extends VBox {
 
             if (payload.has("host")) {
                 this.hostUsername = payload.get("host").asText();
-                hostStatusLabel.setText("👑 Host: " + this.hostUsername);
             }
 
             this.isHost = currentPlayerId != null && currentPlayerId.equals(this.hostPlayerId);
+
+            if (this.hostUsername != null) {
+                hostStatusLabel.setText("👑 Host: " + this.hostUsername + (isHost ? " (You)" : ""));
+            } else if (isHost) {
+                hostStatusLabel.setText("👑 Host: " + currentUsername + " (You)");
+            }
 
             if (payload.has("players") && payload.get("players").isArray()) {
                 JsonNode playersNode = payload.get("players");
                 playerRosterBox.getChildren().clear();
 
                 int count = playersNode.size();
-                playerCountBadge.setText("Players: " + count);
+                playerCountBadge.setText("👥 Players: " + count);
 
                 for (JsonNode pNode : playersNode) {
                     String pId = pNode.path("playerId").asText();
@@ -234,18 +263,18 @@ public class MultiplayerLobbyView extends VBox {
                     addPlayerRow(pName, pId, pIsHost);
                 }
             } else if (payload.has("playerCount")) {
-                playerCountBadge.setText("Players: " + payload.get("playerCount").asInt());
+                playerCountBadge.setText("👥 Players: " + payload.get("playerCount").asInt());
             }
 
             // Update Start Quiz button controls
             if (isHost) {
                 startQuizButton.setDisable(false);
-                startQuizButton.setText("Choose Quiz Category");
-                startQuizHint.setText("Choose a category and start the quiz when everyone is ready.");
+                startQuizButton.setText("Choose Quiz Category ➔");
+                startQuizHint.setText("You are the host! Choose a quiz category to start the battle when all players are ready.");
             } else {
                 startQuizButton.setDisable(true);
-                startQuizButton.setText("Waiting for Host");
-                startQuizHint.setText("Only the host (" + (hostUsername != null ? hostUsername : "Host") + ") can start the quiz.");
+                startQuizButton.setText("Waiting for Host...");
+                startQuizHint.setText("Only the room host (" + (hostUsername != null ? hostUsername : "Host") + ") can start the quiz.");
             }
         });
     }
@@ -253,24 +282,30 @@ public class MultiplayerLobbyView extends VBox {
     private void addPlayerRow(String username, String playerId, boolean isHostPlayer) {
         HBox row = new HBox(12);
         row.setAlignment(Pos.CENTER_LEFT);
-        row.setPadding(new Insets(8, 14, 8, 14));
-        row.setStyle("-fx-background-color: #0f172a; -fx-background-radius: 6px; -fx-border-color: #334155; -fx-border-radius: 6px; -fx-border-width: 1px;");
+        row.setPadding(new Insets(10, 16, 10, 16));
+        row.setStyle("-fx-background-color: #141E33; -fx-background-radius: 8px; -fx-border-color: "
+                + (isHostPlayer ? "#F59E0B" : "#2D3E5D") + "; -fx-border-radius: 8px; -fx-border-width: 1px;");
 
-        Label icon = new Label(isHostPlayer ? "👑" : "👤");
-        icon.setStyle("-fx-font-size: 16px;");
+        // Avatar Initial
+        String initial = (username != null && !username.isBlank()) ? String.valueOf(Character.toUpperCase(username.charAt(0))) : "?";
+        Label avatar = new Label(initial);
+        avatar.setStyle("-fx-background-color: " + (isHostPlayer ? "#451A03" : "#1E3A5F") + "; -fx-text-fill: "
+                + (isHostPlayer ? "#FBBF24" : "#38BDF8") + "; -fx-font-weight: bold; -fx-font-size: 13px; -fx-padding: 4px 9px; -fx-background-radius: 50%;");
 
-        Label name = new Label(username + (playerId.equals(currentPlayerId) ? " (You)" : ""));
-        name.setStyle("-fx-font-weight: bold; -fx-text-fill: #f1f5f9; -fx-font-size: 13px;");
+        boolean isMe = playerId != null && playerId.equals(currentPlayerId);
+        Label name = new Label(username + (isMe ? " (You)" : ""));
+        name.setStyle("-fx-font-weight: bold; -fx-text-fill: #F1F5F9; -fx-font-size: 14px;");
 
         Region rowSpacer = new Region();
         HBox.setHgrow(rowSpacer, Priority.ALWAYS);
 
-        Label roleBadge = new Label(isHostPlayer ? "HOST" : "PLAYER");
-        roleBadge.setStyle(isHostPlayer
-                ? "-fx-background-color: #7c2d12; -fx-text-fill: #fdba74; -fx-padding: 3px 8px; -fx-background-radius: 6px; -fx-font-size: 11px; -fx-font-weight: bold;"
-                : "-fx-background-color: #1e293b; -fx-text-fill: #94a3b8; -fx-padding: 3px 8px; -fx-background-radius: 6px; -fx-font-size: 11px;");
+        Label connectionIndicator = new Label("🟢 Connected");
+        connectionIndicator.setStyle("-fx-font-size: 11px; -fx-text-fill: #34D399; -fx-font-weight: bold;");
 
-        row.getChildren().addAll(icon, name, rowSpacer, roleBadge);
+        Label roleBadge = new Label(isHostPlayer ? "👑 HOST" : "⚔️ PLAYER");
+        roleBadge.getStyleClass().add(isHostPlayer ? "host-crown-badge" : "player-role-badge");
+
+        row.getChildren().addAll(avatar, name, rowSpacer, connectionIndicator, roleBadge);
         playerRosterBox.getChildren().add(row);
     }
 

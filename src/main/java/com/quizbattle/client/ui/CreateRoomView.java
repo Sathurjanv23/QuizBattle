@@ -10,9 +10,9 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 
 /**
- * Screen 2: Create Room Confirmation View.
- * Displays the authoritative server-generated room code, copy-to-clipboard action,
- * host identity confirmation, and lobby navigation.
+ * Screen 5: Create Room Confirmation View.
+ * Displays the authoritative server-generated room code in an ultra-prominent monospace card,
+ * with one-click clipboard copy and lobby entry.
  */
 public class CreateRoomView extends VBox {
 
@@ -29,34 +29,46 @@ public class CreateRoomView extends VBox {
             String hostUsername,
             Runnable onEnterLobbyRequested,
             Runnable onBackToDashboardRequested) {
-        super(18);
+        super(20);
         this.roomCode = roomCode;
         this.roomName = roomName;
         this.hostUsername = hostUsername;
 
-        getStyleClass().add("welcome-card");
+        getStyleClass().addAll("welcome-card", "hero-card");
         setAlignment(Pos.CENTER);
-        setMaxWidth(520);
-        setPadding(new Insets(32));
+        setMaxWidth(540);
+        setPadding(new Insets(32, 40, 36, 40));
 
-        Label heading = new Label("Room Created Successfully! 🎉");
+        // 1. Heading & Host Badge
+        Label successIcon = new Label("🎉");
+        successIcon.setStyle("-fx-font-size: 36px;");
+
+        Label heading = new Label("Battle Room Created!");
         heading.getStyleClass().add("card-heading");
 
         Label hostBadge = new Label("👑 You are the Host (" + hostUsername + ")");
-        hostBadge.getStyleClass().add("player-badge");
+        hostBadge.getStyleClass().add("host-crown-badge");
 
-        Label roomNameLabel = new Label("Room: " + (roomName != null ? roomName : "Multiplayer Arena"));
+        Label roomNameLabel = new Label("Room Name: " + (roomName != null ? roomName : "Multiplayer Arena"));
         roomNameLabel.getStyleClass().add("card-subtitle");
 
-        Label promptLabel = new Label("Share this 6-character room code with your friends:");
+        VBox headerBox = new VBox(6, successIcon, heading, hostBadge, roomNameLabel);
+        headerBox.setAlignment(Pos.CENTER);
+
+        // 2. Prominent Room Code Section
+        VBox codeContainer = new VBox(10);
+        codeContainer.setAlignment(Pos.CENTER);
+        codeContainer.setPadding(new Insets(12, 0, 12, 0));
+
+        Label promptLabel = new Label("SHARE THIS ROOM CODE WITH YOUR FRIENDS");
         promptLabel.getStyleClass().add("field-label");
 
-        // Prominent Room Code Display
         Label codeDisplay = new Label(roomCode);
         codeDisplay.getStyleClass().add("room-code-display");
 
         copyFeedbackLabel = new Label();
         copyFeedbackLabel.getStyleClass().add("status-label");
+        copyFeedbackLabel.setStyle("-fx-text-fill: #34D399; -fx-font-weight: bold;");
         copyFeedbackLabel.setVisible(false);
 
         Button copyButton = new Button("📋 Copy Room Code");
@@ -70,17 +82,21 @@ public class CreateRoomView extends VBox {
                 copyFeedbackLabel.setText("✓ Room code " + roomCode + " copied to clipboard!");
                 copyFeedbackLabel.setVisible(true);
             } catch (Throwable ex) {
-                copyFeedbackLabel.setText("Room code: " + roomCode);
+                copyFeedbackLabel.setText("Code: " + roomCode);
                 copyFeedbackLabel.setVisible(true);
             }
         });
 
-        HBox copyBox = new HBox(12, codeDisplay, copyButton);
-        copyBox.setAlignment(Pos.CENTER);
+        HBox copyRow = new HBox(12, codeDisplay, copyButton);
+        copyRow.setAlignment(Pos.CENTER);
 
+        codeContainer.getChildren().addAll(promptLabel, copyRow, copyFeedbackLabel);
+
+        // 3. Navigation Actions
         Button enterLobbyButton = new Button("Enter Multiplayer Lobby ➔");
         enterLobbyButton.getStyleClass().add("primary-button");
         enterLobbyButton.setMaxWidth(Double.MAX_VALUE);
+        enterLobbyButton.setStyle("-fx-font-size: 15px; -fx-padding: 13px 24px;");
         enterLobbyButton.setOnAction(e -> {
             if (onEnterLobbyRequested != null) {
                 onEnterLobbyRequested.run();
@@ -98,28 +114,7 @@ public class CreateRoomView extends VBox {
 
         VBox actions = new VBox(10, enterLobbyButton, backButton);
         actions.setAlignment(Pos.CENTER);
-        actions.setMaxWidth(380);
 
-        getChildren().addAll(
-                heading,
-                hostBadge,
-                roomNameLabel,
-                promptLabel,
-                copyBox,
-                copyFeedbackLabel,
-                actions
-        );
-    }
-
-    public String getRoomCode() {
-        return roomCode;
-    }
-
-    public String getRoomName() {
-        return roomName;
-    }
-
-    public String getHostUsername() {
-        return hostUsername;
+        getChildren().addAll(headerBox, codeContainer, actions);
     }
 }

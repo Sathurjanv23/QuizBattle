@@ -29,12 +29,12 @@ public class PersonalSummaryView extends VBox {
             Map<String, String> answerHistory,
             Runnable onBackToResults,
             Runnable onLeave) {
-        super(14);
-        getStyleClass().add("welcome-card");
+        super(16);
+        getStyleClass().addAll("welcome-card", "hero-card");
         setAlignment(Pos.TOP_CENTER);
-        setMaxWidth(560);
+        setMaxWidth(640);
         setMaxHeight(Region.USE_PREF_SIZE);
-        setPadding(new Insets(24));
+        setPadding(new Insets(28, 32, 28, 32));
 
         Label title = new Label("📋 Personal Summary — " + username);
         title.getStyleClass().add("card-heading");

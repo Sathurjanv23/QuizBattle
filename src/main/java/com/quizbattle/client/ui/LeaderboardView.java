@@ -85,10 +85,10 @@ public class LeaderboardView extends VBox {
         HBox h = new HBox(12);
         h.setPadding(new Insets(0, 14, 0, 14));
         h.getChildren().addAll(
-                fixed(new Label("RANK"), 56),
+                fixed(new Label("RANK"), 72),
                 grow(new Label("PLAYER")),
                 fixed(new Label("CORRECT"), 80),
-                fixed(new Label("SCORE"), 80));
+                fixed(new Label("SCORE"), 90));
         h.getChildren().forEach(n -> n.getStyleClass().add("leaderboard-header"));
         return h;
     }
@@ -119,10 +119,17 @@ public class LeaderboardView extends VBox {
         };
         Label rankLabel = new Label(medal + "#" + rank);
         rankLabel.getStyleClass().add("leaderboard-rank");
+        if (rank == 1) {
+            rankLabel.getStyleClass().add("podium-gold");
+        } else if (rank == 2) {
+            rankLabel.getStyleClass().add("podium-silver");
+        } else if (rank == 3) {
+            rankLabel.getStyleClass().add("podium-bronze");
+        }
 
         HBox nameBox = new HBox(8);
         nameBox.setAlignment(Pos.CENTER_LEFT);
-        Label nameLabel = new Label(name + (me ? "  (you)" : ""));
+        Label nameLabel = new Label(name + (me ? "  (You)" : ""));
         nameLabel.getStyleClass().add("leaderboard-name");
         nameBox.getChildren().add(nameLabel);
         if (!connected) {
@@ -136,7 +143,7 @@ public class LeaderboardView extends VBox {
         Label score = new Label(e.path("score").asInt() + " pts");
         score.getStyleClass().add("leaderboard-score");
 
-        row.getChildren().addAll(fixed(rankLabel, 56), grow(nameBox), fixed(correct, 80), fixed(score, 80));
+        row.getChildren().addAll(fixed(rankLabel, 72), grow(nameBox), fixed(correct, 80), fixed(score, 90));
         return row;
     }
 

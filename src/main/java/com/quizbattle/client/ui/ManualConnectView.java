@@ -13,8 +13,8 @@ import javafx.scene.layout.VBox;
 import java.util.function.BiConsumer;
 
 /**
- * Screen 2: Manual TCP Server Connection View.
- * Allows manual configuration of server host IP and TCP port, with real-time error display.
+ * Screen 3: Manual TCP Server Connection View.
+ * Allows manual configuration of server host IP and TCP port, with human-friendly error feedback.
  */
 public class ManualConnectView extends VBox {
 
@@ -27,33 +27,48 @@ public class ManualConnectView extends VBox {
 
     @SuppressWarnings("this-escape")
     public ManualConnectView(String username, BiConsumer<String, Integer> onConnect, Runnable onBack) {
-        super(16);
-        getStyleClass().add("welcome-card");
+        super(18);
+        getStyleClass().addAll("welcome-card", "hero-card");
         setAlignment(Pos.CENTER);
-        setMaxWidth(460);
+        setMaxWidth(480);
         setPadding(new Insets(32));
 
-        Label heading = new Label("Server Connection");
+        // 1. Heading & Identity
+        Label heading = new Label("Direct Server Connection");
         heading.getStyleClass().add("card-heading");
 
-        Label playerGreeting = new Label("Connecting as: " + username);
+        Label playerGreeting = new Label("👤 Player: " + username);
         playerGreeting.getStyleClass().add("player-badge");
 
-        Label hostLabel = new Label("Server Host / IP Address:");
+        Label subtitle = new Label("Enter the TCP IP address and port of your QuizBattle host server.");
+        subtitle.getStyleClass().add("card-subtitle");
+        subtitle.setTextAlignment(javafx.scene.text.TextAlignment.CENTER);
+        subtitle.setWrapText(true);
+
+        VBox headerBox = new VBox(6, heading, playerGreeting, subtitle);
+        headerBox.setAlignment(Pos.CENTER);
+
+        // 2. Form Inputs
+        VBox formBox = new VBox(12);
+        formBox.setAlignment(Pos.CENTER_LEFT);
+
+        Label hostLabel = new Label("SERVER HOST / IP ADDRESS");
         hostLabel.getStyleClass().add("field-label");
 
         hostField = new TextField("127.0.0.1");
-        hostField.setPromptText("127.0.0.1 or hostname");
+        hostField.setPromptText("127.0.0.1 or domain");
         hostField.getStyleClass().add("input-field");
 
-        Label portLabel = new Label("TCP Server Port (default 5000):");
+        Label portLabel = new Label("TCP SERVER PORT (DEFAULT 5000)");
         portLabel.getStyleClass().add("field-label");
 
         portField = new TextField(String.valueOf(AppConfig.DEFAULT_SERVER_PORT));
-        portField.setPromptText("Port");
+        portField.setPromptText("5000");
         portField.getStyleClass().add("input-field");
 
-        // Status & Error indicators
+        formBox.getChildren().addAll(hostLabel, hostField, portLabel, portField);
+
+        // 3. Status & Error indicators
         statusLabel = new Label("Status: Ready to connect");
         statusLabel.getStyleClass().add("status-label");
 
@@ -64,18 +79,20 @@ public class ManualConnectView extends VBox {
         errorLabel.setManaged(false);
 
         progressSpinner = new ProgressIndicator();
-        progressSpinner.setPrefSize(20, 20);
+        progressSpinner.setPrefSize(18, 18);
         progressSpinner.setVisible(false);
         progressSpinner.setManaged(false);
 
-        HBox statusRow = new HBox(10, progressSpinner, statusLabel);
+        HBox statusRow = new HBox(8, progressSpinner, statusLabel);
         statusRow.setAlignment(Pos.CENTER);
 
-        connectButton = new Button("Connect to Quiz Server");
+        // 4. Action Buttons
+        connectButton = new Button("Connect to Quiz Server ➔");
         connectButton.getStyleClass().add("primary-button");
         connectButton.setMaxWidth(Double.MAX_VALUE);
+        connectButton.setStyle("-fx-font-size: 15px; -fx-padding: 13px 24px;");
 
-        Button backButton = new Button("⬅ Back to Username");
+        Button backButton = new Button("⬅ Back to Discovery");
         backButton.getStyleClass().add("secondary-button");
         backButton.setMaxWidth(Double.MAX_VALUE);
 
@@ -104,47 +121,57 @@ public class ManualConnectView extends VBox {
             }
         });
 
+        hostField.setOnAction(e -> connectButton.fire());
+        portField.setOnAction(e -> connectButton.fire());
+
         backButton.setOnAction(e -> {
             if (onBack != null) {
                 onBack.run();
             }
         });
 
-        getChildren().addAll(
-                heading,
-                playerGreeting,
-                hostLabel,
-                hostField,
-                portLabel,
-                portField,
-                errorLabel,
-                statusRow,
-                connectButton,
-                backButton
-        );
-    }
-
-    public void showError(String errorMessage) {
-        errorLabel.setText("⚠️ " + errorMessage);
-        errorLabel.setVisible(true);
-        errorLabel.setManaged(true);
-        setConnecting(false);
-    }
-
-    public void clearError() {
-        errorLabel.setText("");
-        errorLabel.setVisible(false);
-        errorLabel.setManaged(false);
+        getChildren().addAll(headerBox, formBox, errorLabel, statusRow, connectButton, backButton);
     }
 
     public void setConnecting(boolean connecting) {
         progressSpinner.setVisible(connecting);
         progressSpinner.setManaged(connecting);
         connectButton.setDisable(connecting);
+        hostField.setDisable(connecting);
+        portField.setDisable(connecting);
         if (connecting) {
-            statusLabel.setText("Status: Connecting over TCP...");
+            statusLabel.setText("Connecting to " + hostField.getText() + ":" + portField.getText() + "...");
         } else {
             statusLabel.setText("Status: Ready to connect");
         }
+    }
+
+    /** Formats raw network exceptions into clean, human-readable guidance. */
+    public void showError(String rawMessage) {
+        String friendly;
+        if (rawMessage == null || rawMessage.isBlank()) {
+            friendly = "Unable to connect to the server. Please verify the host and port.";
+        } else if (rawMessage.contains("Connection refused") || rawMessage.contains("ConnectException")) {
+            friendly = "Unable to connect. The QuizBattle server is not running on "
+                    + hostField.getText().trim() + ":" + portField.getText().trim()
+                    + ".\nPlease start the server first or check the port number.";
+        } else if (rawMessage.contains("UnknownHostException")) {
+            friendly = "Hostname '" + hostField.getText().trim() + "' could not be resolved. Please verify the IP address.";
+        } else if (rawMessage.contains("SocketTimeoutException")) {
+            friendly = "Connection timed out. The server did not respond in time.";
+        } else {
+            friendly = rawMessage;
+        }
+
+        errorLabel.setText("⚠ " + friendly);
+        errorLabel.setVisible(true);
+        errorLabel.setManaged(true);
+        setConnecting(false);
+    }
+
+    public void clearError() {
+        errorLabel.setVisible(false);
+        errorLabel.setManaged(false);
+        errorLabel.setText("");
     }
 }

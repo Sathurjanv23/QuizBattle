@@ -37,7 +37,7 @@ public class NavigationContainer extends BorderPane {
         topBar.setAlignment(Pos.CENTER_LEFT);
         topBar.setPadding(new Insets(12, 20, 12, 20));
 
-        titleLabel = new Label("QuizBattle 2.0");
+        titleLabel = new Label("⚔️ QuizBattle 2.0");
         titleLabel.getStyleClass().add("app-title");
 
         Region spacer = new Region();

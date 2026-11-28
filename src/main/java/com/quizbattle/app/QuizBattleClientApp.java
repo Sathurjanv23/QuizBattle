@@ -64,6 +64,7 @@ public class QuizBattleClientApp extends Application {
 
     // Member 5: results state (display only; the server owns every score)
     private String currentHostPlayerId;
+    private JsonNode lastRoomState;
     private JsonNode lastQuizFinished;
     private FinalResultsView finalResultsView;
     private boolean quizOver = false;
@@ -199,8 +200,13 @@ public class QuizBattleClientApp extends Application {
             this.currentRoomName = payload != null && payload.has("roomName")
                     ? payload.get("roomName").asText()
                     : "Multiplayer Arena";
+            if (payload != null && payload.has("hostPlayerId")) {
+                this.currentHostPlayerId = payload.get("hostPlayerId").asText();
+            } else {
+                this.currentHostPlayerId = currentPlayerId;
+            }
 
-            log.info("Room created by server: code={}, name={}", currentRoomCode, currentRoomName);
+            log.info("Room created by server: code={}, name={}, host={}", currentRoomCode, currentRoomName, currentHostPlayerId);
             showCreateRoomConfirmationScreen();
         });
 
@@ -234,6 +240,7 @@ public class QuizBattleClientApp extends Application {
             if (payload != null && payload.has("hostPlayerId")) {
                 currentHostPlayerId = payload.get("hostPlayerId").asText();
             }
+            this.lastRoomState = payload;
             if (multiplayerLobbyView != null && payload != null) {
                 multiplayerLobbyView.updateRoomState(payload);
             }
@@ -247,6 +254,7 @@ public class QuizBattleClientApp extends Application {
             }
             currentRoomCode = null;
             currentHostPlayerId = null;
+            lastRoomState = null;
             multiplayerLobbyView = null;
             playerHomeView = null;
             resetResultsState();
@@ -393,9 +401,13 @@ public class QuizBattleClientApp extends Application {
                 currentPlayerId,
                 currentUsername,
                 currentHostPort,
+                currentHostPlayerId,
                 this::showQuizCategoryScreen,
                 this::leaveCurrentRoom
         );
+        if (lastRoomState != null) {
+            multiplayerLobbyView.updateRoomState(lastRoomState);
+        }
         rootContainer.navigateTo(multiplayerLobbyView);
     }
 

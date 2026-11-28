@@ -7,10 +7,13 @@ import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
+import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
 import javafx.scene.control.ProgressIndicator;
 import javafx.scene.input.MouseButton;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
 import java.util.List;
@@ -18,9 +21,9 @@ import java.util.concurrent.CompletableFuture;
 import java.util.function.BiConsumer;
 
 /**
- LAN Discovery screen.
- Scans the LAN over UDP, lists the servers that answered and connects over TCP.
- The scan runs on a background thread so the JavaFX UI never freezes.
+ * Screen 2: LAN Server Discovery View.
+ * Scans the local network via UDP broadcast (port 5001), renders discovered QuizBattle servers
+ * in a sleek dark game browser, and establishes a TCP connection on selection.
  */
 public class LanDiscoveryView extends VBox {
 
@@ -42,45 +45,99 @@ public class LanDiscoveryView extends VBox {
                             BiConsumer<String, Integer> onConnect,
                             Runnable onManualConnect,
                             Runnable onBack) {
-        super(14);
+        super(18);
         this.discoveryClient = discoveryClient;
         this.onConnect = onConnect;
 
-        getStyleClass().add("welcome-card");
+        getStyleClass().addAll("welcome-card", "hero-card");
         setAlignment(Pos.CENTER);
-        setMaxWidth(560);
-        setPadding(new Insets(28));
+        setMaxWidth(620);
+        setPadding(new Insets(32));
 
-        // ---------- Labels ----------
+        // 1. Heading & Identity
         Label heading = new Label("Find a Quiz Server");
         heading.getStyleClass().add("card-heading");
 
-        Label playerGreeting = new Label("Connecting as: " + username);
+        Label playerGreeting = new Label("👤 Player: " + username);
         playerGreeting.getStyleClass().add("player-badge");
 
-        Label subtitle = new Label("Scans your local network with a UDP broadcast on port "
-                + AppConfig.getDiscoveryPort() + ". Gameplay then uses TCP.");
+        Label subtitle = new Label("Broadcasting UDP probe on port " + AppConfig.getDiscoveryPort()
+                + " to auto-detect LAN servers. Gameplay then uses high-speed TCP.");
         subtitle.getStyleClass().add("card-subtitle");
+        subtitle.setTextAlignment(javafx.scene.text.TextAlignment.CENTER);
         subtitle.setWrapText(true);
 
-        // ---------- Server list ----------
+        VBox headerBox = new VBox(8, heading, playerGreeting, subtitle);
+        headerBox.setAlignment(Pos.CENTER);
+
+        // 2. Server List with Custom Dark Cell Factory
         serverList = new ListView<>();
-        serverList.setPrefHeight(170);
-        serverList.setPlaceholder(new Label("No servers yet. Click \"Scan LAN\"."));
-        serverList.getSelectionModel().selectedItemProperty()
-                .addListener((obs, oldValue, newValue) -> connectButton().setDisable(newValue == null || scanning));
-        serverList.setOnMouseClicked(e -> {
-            if (e.getButton() == MouseButton.PRIMARY && e.getClickCount() == 2) {
-                connectToSelected(); // double-click = connect
+        serverList.setPrefHeight(200);
+        serverList.getStyleClass().add("list-view");
+
+        Label emptyPlaceholder = new Label("📡 No servers found yet.\nClick \"Scan Network\" or connect manually below.");
+        emptyPlaceholder.getStyleClass().add("card-subtitle");
+        emptyPlaceholder.setTextAlignment(javafx.scene.text.TextAlignment.CENTER);
+        serverList.setPlaceholder(emptyPlaceholder);
+
+        serverList.setCellFactory(lv -> new ListCell<>() {
+            @Override
+            protected void updateItem(DiscoveredServer item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    setText(null);
+                    setGraphic(null);
+                } else {
+                    HBox row = new HBox(12);
+                    row.setAlignment(Pos.CENTER_LEFT);
+                    row.setPadding(new Insets(4, 6, 4, 6));
+
+                    Label serverIcon = new Label("🖥️");
+                    serverIcon.setStyle("-fx-font-size: 18px;");
+
+                    VBox infoBox = new VBox(3);
+                    Label nameLabel = new Label(item.serverName());
+                    nameLabel.setStyle("-fx-font-size: 15px; -fx-font-weight: bold; -fx-text-fill: #F8FAFC;");
+
+                    Label detailLabel = new Label(item.host() + ":" + item.tcpPort()
+                            + " • " + item.openRooms() + " room(s) • " + item.onlinePlayers() + " player(s)");
+                    detailLabel.setStyle("-fx-font-size: 12px; -fx-text-fill: #94A3B8;");
+                    infoBox.getChildren().addAll(nameLabel, detailLabel);
+
+                    Region spacer = new Region();
+                    HBox.setHgrow(spacer, Priority.ALWAYS);
+
+                    Label pingBadge = new Label("⚡ " + item.responseTimeMs() + " ms");
+                    pingBadge.getStyleClass().add("pill-badge");
+
+                    row.getChildren().addAll(serverIcon, infoBox, spacer, pingBadge);
+                    setGraphic(row);
+                    setText(null);
+                }
             }
         });
 
-        // ---------- Status / error ----------
-        statusLabel = new Label("Status: Ready to scan");
+        connectButton = new Button("Connect to Server ➔");
+        connectButton.getStyleClass().add("primary-button");
+        connectButton.setMaxWidth(Double.MAX_VALUE);
+        connectButton.setDisable(true);
+        connectButton.setOnAction(e -> connectToSelected());
+
+        serverList.getSelectionModel().selectedItemProperty()
+                .addListener((obs, oldValue, newValue) -> connectButton.setDisable(newValue == null || scanning));
+
+        serverList.setOnMouseClicked(e -> {
+            if (e.getButton() == MouseButton.PRIMARY && e.getClickCount() == 2) {
+                connectToSelected();
+            }
+        });
+
+        // 3. Status & Error Feedback
+        statusLabel = new Label("Status: Ready to scan network");
         statusLabel.getStyleClass().add("status-label");
 
         progressSpinner = new ProgressIndicator();
-        progressSpinner.setPrefSize(20, 20);
+        progressSpinner.setPrefSize(18, 18);
         progressSpinner.setVisible(false);
         progressSpinner.setManaged(false);
 
@@ -93,47 +150,50 @@ public class LanDiscoveryView extends VBox {
         errorLabel.setVisible(false);
         errorLabel.setManaged(false);
 
-        // ---------- Buttons ----------
-        scanButton = new Button("🔍 Scan LAN");
-        scanButton.getStyleClass().add("primary-button");
+        // 4. Action Buttons
+        HBox primaryActionRow = new HBox(12);
+        primaryActionRow.setAlignment(Pos.CENTER);
+
+        scanButton = new Button("🔄 Scan Network");
+        scanButton.getStyleClass().add("secondary-button");
         scanButton.setMaxWidth(Double.MAX_VALUE);
+        HBox.setHgrow(scanButton, Priority.ALWAYS);
         scanButton.setOnAction(e -> scan());
 
-        connectButton = new Button("Connect to Selected Server");
-        connectButton.getStyleClass().add("primary-button");
-        connectButton.setMaxWidth(Double.MAX_VALUE);
-        connectButton.setDisable(true);
-        connectButton.setOnAction(e -> connectToSelected());
+        HBox.setHgrow(connectButton, Priority.ALWAYS);
+        primaryActionRow.getChildren().addAll(scanButton, connectButton);
 
-        Button manualButton = new Button("⌨ Enter IP Manually");
+        HBox navRow = new HBox(12);
+        navRow.setAlignment(Pos.CENTER);
+
+        Button manualButton = new Button("⌨ Connect Manually");
         manualButton.getStyleClass().add("secondary-button");
         manualButton.setMaxWidth(Double.MAX_VALUE);
+        HBox.setHgrow(manualButton, Priority.ALWAYS);
         manualButton.setOnAction(e -> {
             if (onManualConnect != null) {
                 onManualConnect.run();
             }
         });
 
-        Button backButton = new Button("⬅ Back to Username");
+        Button backButton = new Button("⬅ Back");
         backButton.getStyleClass().add("secondary-button");
         backButton.setMaxWidth(Double.MAX_VALUE);
+        HBox.setHgrow(backButton, Priority.ALWAYS);
         backButton.setOnAction(e -> {
             if (onBack != null) {
                 onBack.run();
             }
         });
 
-        getChildren().addAll(heading, playerGreeting, subtitle, serverList,
-                errorLabel, statusRow, scanButton, connectButton, manualButton, backButton);
+        navRow.getChildren().addAll(manualButton, backButton);
 
-        scan(); // scan automatically when the screen opens
+        getChildren().addAll(headerBox, serverList, errorLabel, statusRow, primaryActionRow, navRow);
+
+        scan(); // auto-scan on view entry
     }
 
-    private Button connectButton() {
-        return connectButton;
-    }
-
-    /** Runs the UDP scan on a background thread, then shows results on the JavaFX thread. */
+    /** Runs the UDP scan on a background thread, then updates the JavaFX thread safely. */
     public void scan() {
         if (scanning) {
             return;
@@ -143,8 +203,8 @@ public class LanDiscoveryView extends VBox {
         serverList.getItems().clear();
 
         CompletableFuture
-                .supplyAsync(() -> discoveryClient.discover(UdpDiscoveryClient.DEFAULT_TIMEOUT)) // background
-                .whenComplete((servers, error) -> UiCallbackDispatcher.runOnFxThread(() -> {     // back to UI
+                .supplyAsync(() -> discoveryClient.discover(UdpDiscoveryClient.DEFAULT_TIMEOUT))
+                .whenComplete((servers, error) -> UiCallbackDispatcher.runOnFxThread(() -> {
                     setScanning(false);
                     if (error != null) {
                         showError("Scan failed: " + error.getMessage());
@@ -157,11 +217,11 @@ public class LanDiscoveryView extends VBox {
     private void showResults(List<DiscoveredServer> servers) {
         serverList.getItems().setAll(servers);
         if (servers.isEmpty()) {
-            statusLabel.setText("Status: No servers found");
-            showError("No QuizBattle server answered. Make sure the server is running. "
-                    + "If this network blocks UDP broadcast, use \"Enter IP Manually\".");
+            statusLabel.setText("Status: No servers found on LAN");
+            showError("No QuizBattle server responded to UDP broadcast.\n"
+                    + "Please ensure the server is running, or click \"Connect Manually\" to enter 127.0.0.1:5000.");
         } else {
-            statusLabel.setText("Status: Found " + servers.size() + " server(s). Select one and connect.");
+            statusLabel.setText("Status: Found " + servers.size() + " online server(s). Select one to connect.");
             serverList.getSelectionModel().selectFirst();
         }
     }
@@ -174,45 +234,45 @@ public class LanDiscoveryView extends VBox {
         clearError();
         setConnecting(true, selected);
         if (onConnect != null) {
-            onConnect.accept(selected.host(), selected.tcpPort()); // TCP connect (Member 1's code)
+            onConnect.accept(selected.host(), selected.tcpPort());
         }
     }
 
-    private void setScanning(boolean value) {
-        scanning = value;
-        progressSpinner.setVisible(value);
-        progressSpinner.setManaged(value);
-        scanButton.setDisable(value);
-        connectButton.setDisable(value || serverList.getSelectionModel().getSelectedItem() == null);
-        if (value) {
-            statusLabel.setText("Status: Broadcasting UDP discovery request...");
+    private void setScanning(boolean active) {
+        this.scanning = active;
+        progressSpinner.setVisible(active);
+        progressSpinner.setManaged(active);
+        scanButton.setDisable(active);
+        if (active) {
+            statusLabel.setText("Broadcasting UDP discovery probe on port " + AppConfig.getDiscoveryPort() + "...");
+            connectButton.setDisable(true);
         }
     }
 
-    private void setConnecting(boolean connecting, DiscoveredServer server) {
-        progressSpinner.setVisible(connecting);
-        progressSpinner.setManaged(connecting);
-        connectButton.setDisable(connecting);
-        scanButton.setDisable(connecting);
-        if (connecting && server != null) {
-            statusLabel.setText("Status: Connecting over TCP to " + server.host() + ":" + server.tcpPort() + "...");
+    private void setConnecting(boolean active, DiscoveredServer server) {
+        progressSpinner.setVisible(active);
+        progressSpinner.setManaged(active);
+        connectButton.setDisable(active);
+        scanButton.setDisable(active);
+        if (active) {
+            statusLabel.setText("Connecting via TCP to " + server.serverName() + " (" + server.host() + ":" + server.tcpPort() + ")...");
         }
     }
 
-    /** Called by the app when the TCP connection fails. */
-    public void showError(String errorMessage) {
-        errorLabel.setText("⚠️ " + errorMessage);
+    public void showError(String message) {
+        errorLabel.setText("⚠ " + message);
         errorLabel.setVisible(true);
         errorLabel.setManaged(true);
-        setConnecting(false, null);
-        if (!scanning) {
-            statusLabel.setText("Status: Ready to scan");
-        }
+        statusLabel.setText("Status: Connection error");
+        progressSpinner.setVisible(false);
+        progressSpinner.setManaged(false);
+        connectButton.setDisable(serverList.getSelectionModel().getSelectedItem() == null);
+        scanButton.setDisable(false);
     }
 
     public void clearError() {
-        errorLabel.setText("");
         errorLabel.setVisible(false);
         errorLabel.setManaged(false);
+        errorLabel.setText("");
     }
 }
