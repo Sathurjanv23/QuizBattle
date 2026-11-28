@@ -25,6 +25,7 @@ import java.util.concurrent.TimeUnit;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class QuestionTimerIntegrationTest {
@@ -138,6 +139,29 @@ class QuestionTimerIntegrationTest {
 
         assertTrue(alice.inbox.get(MessageType.ERROR).isEmpty());
         assertTrue(bob.inbox.get(MessageType.ERROR).isEmpty());
+    }
+
+    @Test
+    void showsAnswerResultBeforeAutomaticallySendingNextQuestion() throws Exception {
+        TestPlayer alice = connect("Alice");
+        createRoom(alice, "Alice's room");
+        alice.send(MessageType.START_QUIZ, Map.of("category", "General Trivia"));
+
+        JsonNode firstQuestion = alice.await(MessageType.QUESTION);
+        alice.send(MessageType.ANSWER, Map.of(
+                "questionId", firstQuestion.path("questionId").asText(),
+                "selectedOptionIndex", 0));
+
+        JsonNode answerResult = alice.await(MessageType.ANSWER_RESULT);
+        assertTrue(answerResult.path("accepted").asBoolean());
+        assertTrue(answerResult.has("correct"));
+        assertEquals(firstQuestion.path("questionId").asText(), answerResult.path("questionId").asText());
+        alice.await(MessageType.QUESTION_CLOSED);
+
+        assertNull(alice.inbox.get(MessageType.QUESTION).poll(300, TimeUnit.MILLISECONDS),
+                "The next question should wait while answer feedback is visible");
+        JsonNode nextQuestion = alice.await(MessageType.QUESTION);
+        assertFalse(firstQuestion.path("questionId").asText().equals(nextQuestion.path("questionId").asText()));
     }
 
     private TestPlayer connect(String username) throws Exception {
